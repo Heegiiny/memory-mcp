@@ -1,0 +1,5 @@
+{
+  "local": {
+    "databaseUrl": "postgresql://postgres:postgres@localhost:5432/memory_local"
+  }
+}
