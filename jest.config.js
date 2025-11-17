@@ -30,5 +30,5 @@ export default {
       statements: 0,
     },
   },
-  setupFiles: ['<rootDir>/jest.setup.js'],
+  setupFiles: ['<rootDir>/jest.setup.cjs'],
 };
