@@ -65,7 +65,7 @@ The user can request one of three response modes:
 
 **Initial Search:**
 - Translate the user's query into an effective search query
-- Use semantic search (rely on Upstash's built-in semantic capabilities)
+- Use semantic search (powered by pgvector for vector similarity)
 - AI-powered reranking is enabled by default (`reranking: true`) for improved relevance
 - Apply filters if the user specified them or if they're implied by the query
 - If `baseFilterExpression` is provided in the user message, use it as a starting point

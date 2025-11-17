@@ -15,7 +15,6 @@ export class ProjectFileLoader {
     '.env.local',
     '.env.production',
     '.env.development',
-    'data/indexes.json',
     '.mcp.json',
     'credentials.json',
     'secrets.json',
