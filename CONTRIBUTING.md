@@ -131,18 +131,18 @@ npm run build
 
 ### Available Commands
 
-| Command | Purpose |
-|---------|---------|
-| `npm run dev` | Start MCP server in development mode with hot reload (tsx) |
-| `npm run build` | Compile TypeScript to `dist/` |
-| `npm run start` | Run compiled server from `dist/` |
-| `npm run lint` | Check for linting issues |
-| `npm run lint:fix` | **Auto-fix linting issues** |
-| `npm run format` | **Format code with Prettier** |
-| `npm run format:check` | Check if code is formatted |
-| `npm run migrate` | Run database migrations |
-| `npm run migrate:seed` | Load test data (optional) |
-| `npm run migrate:verify` | Verify migration state |
+| Command                  | Purpose                                                    |
+| ------------------------ | ---------------------------------------------------------- |
+| `npm run dev`            | Start MCP server in development mode with hot reload (tsx) |
+| `npm run build`          | Compile TypeScript to `dist/`                              |
+| `npm run start`          | Run compiled server from `dist/`                           |
+| `npm run lint`           | Check for linting issues                                   |
+| `npm run lint:fix`       | **Auto-fix linting issues**                                |
+| `npm run format`         | **Format code with Prettier**                              |
+| `npm run format:check`   | Check if code is formatted                                 |
+| `npm run migrate`        | Run database migrations                                    |
+| `npm run migrate:seed`   | Load test data (optional)                                  |
+| `npm run migrate:verify` | Verify migration state                                     |
 
 **Important:** Always run `npm run format` or `npm run lint:fix` before committing to maintain code consistency.
 
@@ -160,6 +160,7 @@ npm run build
 We use **Prettier** and **ESLint** to enforce consistent code style:
 
 **Prettier configuration (`.prettierrc`):**
+
 - 2-space indentation
 - Single quotes
 - Semicolons required
@@ -168,6 +169,7 @@ We use **Prettier** and **ESLint** to enforce consistent code style:
 - LF line endings
 
 **ESLint rules (`eslint.config.js`):**
+
 - TypeScript recommended rules enabled
 - `@typescript-eslint/no-explicit-any` - warn (not error)
 - `@typescript-eslint/no-unused-vars` - warn, ignore vars/args starting with `_`
@@ -235,6 +237,7 @@ npm run dev
 ### Future Test Suite
 
 When adding automated tests:
+
 - Place test files beside source files (`*.test.ts`)
 - Wire tests into npm scripts before merging
 - Test with real PostgreSQL database (no mocks for repository layer)
@@ -278,12 +281,14 @@ Replace the connection string with your actual PostgreSQL credentials.
 If you change the embedding model, **you must update the database schema**:
 
 1. Update environment variables in `.env`:
+
    ```env
    MEMORY_EMBEDDING_MODEL=text-embedding-3-large
    MEMORY_EMBEDDING_DIMENSIONS=3072
    ```
 
 2. Update migration file:
+
    ```sql
    -- Change from vector(1536) to vector(3072)
    ALTER TABLE memories ALTER COLUMN embedding TYPE vector(3072);
@@ -298,6 +303,7 @@ If you change the embedding model, **you must update the database schema**:
 ### Schema Change Checklist
 
 When modifying database schema:
+
 - [ ] Update migration files in `migrations/`
 - [ ] Update TypeScript types in `src/memory/types.ts`
 - [ ] Update `IMemoryRepository` interface if needed
@@ -321,12 +327,14 @@ Update documentation for feature B
 ### Examples
 
 ✅ **Good:**
+
 - `Add pgvector access tracking to searchMemories`
 - `Fix embedding dimension validation in MemoryRepository`
 - `Refactor PromptManager to support versioned prompts`
 - `Update ARCHITECTURE.md with refinement lifecycle`
 
 ❌ **Bad:**
+
 - `WIP changes` (too vague)
 - `Fixed stuff` (not descriptive)
 - `Added feature and also fixed bugs and updated docs` (too much in one commit)
@@ -343,6 +351,7 @@ Update documentation for feature B
 ### Before Submitting
 
 1. **Run quality checks:**
+
    ```bash
    npm run lint:fix
    npm run format
@@ -363,25 +372,31 @@ Update documentation for feature B
 
 ```markdown
 ## Summary
+
 Brief description of what this PR does.
 
 ## Changes
+
 - Bullet point list of key changes
 - Include affected components/files
 
 ## Testing
+
 - Steps to reproduce/verify the changes
 - What scenarios were tested
 
 ## Database Impact
+
 - Does this change the schema? (Yes/No)
 - Migration steps if applicable
 
 ## Breaking Changes
+
 - List any breaking changes (acceptable in pre-release)
 - Migration guide if needed
 
 ## Related Issues
+
 Closes #123
 Related to #456
 ```
@@ -423,6 +438,7 @@ Repository Layer (MemoryRepositoryPostgres.ts)
 ```
 
 **Don't:**
+
 - Call repository methods directly from MCP layer
 - Access database from agent layer
 - Bypass security validators in controller layer
@@ -430,21 +446,25 @@ Repository Layer (MemoryRepositoryPostgres.ts)
 ### Key Patterns to Follow
 
 **Index Resolution:**
+
 - Indexes are database rows, not files
 - Use `IndexResolver.resolve()` to handle default index logic
 - Call `repo.ensureIndex(name, description)` to create/get indexes
 
 **Access Tracking:**
+
 - `searchMemories()` triggers fire-and-forget `updateAccessStats()`
 - Priority scores update automatically using `PriorityCalculator`
 - Top N results are tracked (configurable via `MEMORY_ACCESS_TRACKING_TOP_N`)
 
 **Prompt Composition:**
+
 - Use `PromptManager.composePrompt()` to build system messages
 - Prompts are composable: base + mode + classification + context
 - See `prompts/README.md` for versioning and structure
 
 **Error Handling:**
+
 - Use structured errors (e.g., `MemorySearchError`) with diagnostics
 - Include context: index, query, status, duration, retry count
 - Log to stderr for MCP compatibility
@@ -486,6 +506,7 @@ Essential reading for contributors:
 ### Reporting Issues
 
 When filing issues:
+
 - Include steps to reproduce
 - Provide error messages and stack traces
 - Mention your environment (OS, Node version, PostgreSQL version)

@@ -84,6 +84,7 @@ cd memory-mcp
 ```
 
 The script will:
+
 - Create the `memory_default` database
 - Enable the pgvector extension
 - Run schema migrations
@@ -206,12 +207,12 @@ SELECT * FROM pg_extension WHERE extname = 'vector';  # Verify pgvector
 
 **Troubleshooting tips:**
 
-| Issue | Solution |
-|-------|----------|
-| pgvector extension not found | Verify `vector.control` exists in `pg_config --sharedir/extension/` |
-| Permission denied for CREATE EXTENSION | Connect as superuser: `psql -U postgres -d memory_default` |
-| PostgreSQL not running | Start service: `brew services start postgresql@16` (macOS) or `sudo systemctl start postgresql` (Linux) |
-| Cannot connect to database | Check connection string in `config/projects.json` matches your setup |
+| Issue                                  | Solution                                                                                                |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| pgvector extension not found           | Verify `vector.control` exists in `pg_config --sharedir/extension/`                                     |
+| Permission denied for CREATE EXTENSION | Connect as superuser: `psql -U postgres -d memory_default`                                              |
+| PostgreSQL not running                 | Start service: `brew services start postgresql@16` (macOS) or `sudo systemctl start postgresql` (Linux) |
+| Cannot connect to database             | Check connection string in `config/projects.json` matches your setup                                    |
 
 ## Cloud PostgreSQL Options
 
@@ -250,12 +251,14 @@ SELECT * FROM pg_extension WHERE extname = 'vector';  # Verify pgvector
    - Set `MEMORY_ACTIVE_PROJECT=production` in `.env`
 
 **Production tips:**
+
 - Enable autoscaling to handle variable load
 - Use Neon branches for staging/testing environments
 - Configure connection pooling (see [Production Considerations](#production-considerations))
 - Monitor usage in Neon dashboard
 
 **Cost considerations:**
+
 - Free tier: 0.5 GB storage, 3 GiB-month compute
 - Pro tier: Autoscaling, branch management, higher limits
 
@@ -295,12 +298,14 @@ SELECT * FROM pg_extension WHERE extname = 'vector';  # Verify pgvector
      ```
 
 **Production tips:**
+
 - Use connection pooling (port 6543) for production workloads
 - Enable Row Level Security (RLS) if exposing database directly
 - Use Supabase CLI for local development workflow
 - Monitor query performance in dashboard
 
 **Cost considerations:**
+
 - Free tier: 500 MB database, 2 GB bandwidth
 - Pro tier: 8 GB database, 250 GB bandwidth
 
@@ -333,6 +338,7 @@ AWS RDS provides managed PostgreSQL with high availability options.
      ```
 
 4. **Create database and run migrations**
+
    ```sql
    CREATE DATABASE memory_default;
    \c memory_default
@@ -340,6 +346,7 @@ AWS RDS provides managed PostgreSQL with high availability options.
    ```
 
    Then run migrations:
+
    ```bash
    # Recommended: Use npm script
    npm run migrate
@@ -360,6 +367,7 @@ AWS RDS provides managed PostgreSQL with high availability options.
      ```
 
 **Production tips:**
+
 - Enable automated backups with 7-35 day retention
 - Use Parameter Groups to tune PostgreSQL settings
 - Enable Performance Insights for query monitoring
@@ -367,6 +375,7 @@ AWS RDS provides managed PostgreSQL with high availability options.
 - Use Read Replicas for read-heavy workloads
 
 **Cost considerations:**
+
 - t3.micro: ~$15/month (development)
 - t3.medium: ~$60/month (small production)
 - Storage: $0.115/GB-month
@@ -377,12 +386,14 @@ AWS RDS provides managed PostgreSQL with high availability options.
 Any PostgreSQL 14+ provider with pgvector support will work. Here's a checklist:
 
 **Requirements:**
+
 - [ ] PostgreSQL version 14 or higher
 - [ ] pgvector extension available (either pre-installed or can be compiled)
 - [ ] Connection via standard PostgreSQL connection string
 - [ ] SSL/TLS support (recommended for production)
 
 **Compatible providers:**
+
 - **Google Cloud SQL for PostgreSQL** - Managed PostgreSQL with pgvector
 - **Azure Database for PostgreSQL** - Flexible Server with extensions
 - **DigitalOcean Managed Databases** - PostgreSQL with extension support
@@ -390,6 +401,7 @@ Any PostgreSQL 14+ provider with pgvector support will work. Here's a checklist:
 - **Self-hosted** - Any server running PostgreSQL 14+
 
 **General setup pattern:**
+
 1. Create PostgreSQL instance with version 14+
 2. Enable pgvector extension: `CREATE EXTENSION IF NOT EXISTS vector;`
 3. Run migrations from `migrations/` directory
@@ -534,6 +546,7 @@ Add the Memory MCP server configuration:
 ```
 
 **Important notes:**
+
 - Use absolute paths for `args` and environment variables
 - The `command` is `node` (not `npm` or `tsx`)
 - Point to `dist/index.js` (compiled), not `src/index.ts`
@@ -554,13 +567,13 @@ Add the Memory MCP server configuration:
 
 ### Troubleshooting
 
-| Issue | Solution |
-|-------|----------|
-| MCP server not responding | Verify path in config is absolute and points to `dist/index.js` |
-| Permission denied | Ensure `dist/index.js` is executable: `chmod +x dist/index.js` |
-| Environment variables not set | Use absolute paths in env vars (e.g., `MEMORY_POSTGRES_PROJECT_REGISTRY`) |
-| STDIO timeout | Check server starts successfully: `node dist/index.js` should run without errors |
-| Database connection fails | Verify `config/projects.json` connection string is correct |
+| Issue                         | Solution                                                                         |
+| ----------------------------- | -------------------------------------------------------------------------------- |
+| MCP server not responding     | Verify path in config is absolute and points to `dist/index.js`                  |
+| Permission denied             | Ensure `dist/index.js` is executable: `chmod +x dist/index.js`                   |
+| Environment variables not set | Use absolute paths in env vars (e.g., `MEMORY_POSTGRES_PROJECT_REGISTRY`)        |
+| STDIO timeout                 | Check server starts successfully: `node dist/index.js` should run without errors |
+| Database connection fails     | Verify `config/projects.json` connection string is correct                       |
 
 ### Development vs Production Mode
 
@@ -725,6 +738,7 @@ export OPENAI_API_KEY=$(aws secretsmanager get-secret-value \
 The Memory MCP server uses `PoolManager` (see `src/memory/PoolManager.ts`) for efficient connection management:
 
 **Key behaviors:**
+
 - **One pool per database URL**: Connections are reused across operations
 - **Automatic cleanup**: Pools close gracefully on shutdown (SIGINT/SIGTERM)
 - **Configurable limits**: Default 10 max connections, 30s idle timeout
@@ -749,6 +763,7 @@ The default pool configuration in `src/memory/PoolManager.ts` is:
 For high-traffic production deployments, consider:
 
 1. **Use PgBouncer** for connection pooling at the database level:
+
    ```bash
    # Install PgBouncer
    sudo apt install pgbouncer
@@ -776,16 +791,19 @@ For high-traffic production deployments, consider:
 ### Scaling Strategies
 
 **Vertical scaling (single instance):**
+
 - Increase PostgreSQL instance size (CPU/RAM)
 - Optimize indexes and query performance
 - Tune `max` pool size based on load
 
 **Horizontal scaling (multiple instances):**
+
 - Run multiple MCP server instances (stateless)
 - Use load balancer for distribution
 - Share single PostgreSQL backend (connection pooling critical)
 
 **Database scaling:**
+
 - **Read replicas**: Offload read-heavy workloads (Neon/RDS)
 - **Autoscaling**: Use Neon's serverless autoscaling
 - **Partitioning**: Partition `memories` table by timestamp for large datasets
@@ -804,6 +822,7 @@ For high-traffic production deployments, consider:
     --preferred-backup-window "03:00-04:00"
   ```
 - **Self-hosted**: Use `pg_dump` with cron:
+
   ```bash
   # Daily backup script
   pg_dump -U postgres -d memory_default | gzip > backup-$(date +%Y%m%d).sql.gz
@@ -843,11 +862,13 @@ psql -h prod-host -U postgres -d memory_default < backup.sql
 ### High Availability
 
 **Database layer:**
+
 - **Multi-AZ deployment** (AWS RDS): Automatic failover
 - **Neon**: Built-in redundancy across availability zones
 - **Supabase**: High availability on Pro tier
 
 **Application layer:**
+
 - Deploy multiple MCP server instances behind load balancer
 - Use health checks to detect failed instances
 - Implement graceful shutdown with connection draining
@@ -855,6 +876,7 @@ psql -h prod-host -U postgres -d memory_default < backup.sql
 **Monitoring & Alerting:**
 
 Set up monitoring for:
+
 - Database connection count approaching pool limit
 - Query latency (p95, p99)
 - Error rates in application logs
@@ -914,6 +936,7 @@ LIMIT 10;
 ```
 
 **Metrics to track:**
+
 - Memory creation rate (memories/hour)
 - Search query latency (ms)
 - Embedding generation time (ms)
@@ -924,33 +947,33 @@ LIMIT 10;
 
 ### Essential Commands
 
-| Task | Command |
-|------|---------|
-| Install dependencies | `npm install` |
-| Run development server | `npm run dev` |
-| Build for production | `npm run build` |
-| Run production server | `npm start` |
-| Setup local database | `./scripts/setup-postgres.sh` |
-| Run migrations | `npm run migrate` |
-| Verify database | `npm run migrate:verify` |
-| Format code | `npm run format` |
-| Check linting | `npm run lint` |
-| Auto-fix linting issues | `npm run lint:fix` |
+| Task                    | Command                       |
+| ----------------------- | ----------------------------- |
+| Install dependencies    | `npm install`                 |
+| Run development server  | `npm run dev`                 |
+| Build for production    | `npm run build`               |
+| Run production server   | `npm start`                   |
+| Setup local database    | `./scripts/setup-postgres.sh` |
+| Run migrations          | `npm run migrate`             |
+| Verify database         | `npm run migrate:verify`      |
+| Format code             | `npm run format`              |
+| Check linting           | `npm run lint`                |
+| Auto-fix linting issues | `npm run lint:fix`            |
 
 ### Environment Variables Reference
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `MEMORY_BACKEND` | Yes | `postgres` | Backend type (always postgres) |
-| `MEMORY_POSTGRES_PROJECT_REGISTRY` | Yes | `./config/projects.json` | Path to projects config |
-| `MEMORY_ACTIVE_PROJECT` | Yes | `local` | Active project key from registry |
-| `OPENAI_API_KEY` | Yes | - | OpenAI API key for embeddings |
-| `MEMORY_EMBEDDING_MODEL` | No | `text-embedding-3-small` | Embedding model to use |
-| `MEMORY_EMBEDDING_DIMENSIONS` | No | Auto-detected | Vector dimensions (must match schema) |
-| `MEMORY_MCP_SYSTEM_MESSAGE` | No | - | Host context (inline or file path) |
-| `MEMORY_DEBUG_MODE` | No | `false` | Enable debug logging |
-| `MEMORY_REFINE_DEFAULT_BUDGET` | No | `100` | Max refinement actions |
-| `MEMORY_CHUNK_CHAR_LENGTH` | No | `16000` | Chunk size for large files |
+| Variable                           | Required | Default                  | Description                           |
+| ---------------------------------- | -------- | ------------------------ | ------------------------------------- |
+| `MEMORY_BACKEND`                   | Yes      | `postgres`               | Backend type (always postgres)        |
+| `MEMORY_POSTGRES_PROJECT_REGISTRY` | Yes      | `./config/projects.json` | Path to projects config               |
+| `MEMORY_ACTIVE_PROJECT`            | Yes      | `local`                  | Active project key from registry      |
+| `OPENAI_API_KEY`                   | Yes      | -                        | OpenAI API key for embeddings         |
+| `MEMORY_EMBEDDING_MODEL`           | No       | `text-embedding-3-small` | Embedding model to use                |
+| `MEMORY_EMBEDDING_DIMENSIONS`      | No       | Auto-detected            | Vector dimensions (must match schema) |
+| `MEMORY_MCP_SYSTEM_MESSAGE`        | No       | -                        | Host context (inline or file path)    |
+| `MEMORY_DEBUG_MODE`                | No       | `false`                  | Enable debug logging                  |
+| `MEMORY_REFINE_DEFAULT_BUDGET`     | No       | `100`                    | Max refinement actions                |
+| `MEMORY_CHUNK_CHAR_LENGTH`         | No       | `16000`                  | Chunk size for large files            |
 
 ### Connection String Examples
 
@@ -1020,6 +1043,7 @@ Claude Desktop Not Connecting?
 ### Deployment Checklist
 
 **Pre-deployment:**
+
 - [ ] Run `npm run build` successfully
 - [ ] Verify `.env` is not committed (in `.gitignore`)
 - [ ] Test migrations on staging environment
@@ -1027,6 +1051,7 @@ Claude Desktop Not Connecting?
 - [ ] Backup production database
 
 **Production setup:**
+
 - [ ] PostgreSQL 14+ with pgvector enabled
 - [ ] Database migrations applied
 - [ ] Connection pooling configured (PgBouncer or provider pooling)
@@ -1036,6 +1061,7 @@ Claude Desktop Not Connecting?
 - [ ] Health checks implemented
 
 **Post-deployment:**
+
 - [ ] Verify server starts: `npm start`
 - [ ] Test MCP tools via Claude Desktop
 - [ ] Check logs for errors
