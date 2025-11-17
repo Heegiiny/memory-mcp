@@ -75,11 +75,22 @@ We treat memory as an **active, reconstructive process** that drifts, decays, an
 3. **Synaptic Scaling.** Periodically normalize priority distributions during refinement to prevent saturation where every memory becomes "important."
 4. **Identity Drift Metrics.** Track how canonical beliefs change over time so we can quantify long-term personality shifts and set guardrails if drift becomes too fast.
 
+## Related Work Touchpoints
+
+- **Generative Agents (Park et al., 2023).** Validates our recency/importance/usage scoring, reflection-driven consolidation, and deliberate imperfection. Their reflections became new beliefs; we replicate this via `refine_memories` creating summaries and belief updates rather than replaying raw logs.
+- **Mem0 Framework.** Uses Postgres + pgvector + optional graphs to keep an agent’s working set tight while reinforcing high-value memories. Reinforces our decision to treat the database as an evolving brain rather than a dumb log and to summarize aggressively during consolidation.
+- **Memori Engine.** Demonstrates the value of SQL-native, inspectable memory plus middleware that injects prioritized context. Our observability goals mirror Memori’s emphasis on explainability and structured relationship capture.
+- **Graphiti / Zep.** Builds temporally aware knowledge graphs so “System 1” vector search can be refined by “System 2” relational reasoning. This informs our spreading activation approach and relationship taxonomy for contextual recall.
+- **MemoriesDB (Ward, 2025).** Proposes a temporal-semantic-relational schema on Postgres that aligns with our `MemoryRecord` model (timestamped, embedded, graph-linked). Validates the append-only trajectory mindset and hybrid querying we already employ.
+- **Classical Cognitive Architectures (e.g., SOAR).** Their separation of working vs. long-term memory and chunking into new rules supports our typed-memory hierarchy (episodic → pattern → belief) and the need for scheduled consolidation.
+
+These references illustrate that the broader community converges on decay + reinforcement + reflection + relational organization as the ingredients for human-like agent memory. Our unique contribution is packaging those ideas into an MCP toolset with explicit imperfection goals and observability baked in.
+
 ## How to Use This Document
 
 - Reference this file whenever designing new prompts, schema changes, or refinement behaviors to ensure features align with our imperfect-memory philosophy.
 - Update the version header when material changes land, and summarize deltas in commit/PR descriptions so downstream agents (Claude, Cursor, etc.) can track shifts in brain simulation goals.
- 
+
 ## Observability & Guardrails
 
 - Surfacing internal state is essential for debugging emergent behavior. Provide tooling or debug logs that show:
