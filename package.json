@@ -46,11 +46,11 @@
     "typescript-eslint": "^8.46.4"
   },
   "lint-staged": {
-    "*.{ts,tsx,js}": [
+    "*.{ts,tsx}": [
       "prettier --write",
       "eslint --max-warnings=0"
     ],
-    "*.{json,md}": [
+    "*.{js,json,md}": [
       "prettier --write"
     ]
   }
