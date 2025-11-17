@@ -35,11 +35,41 @@ export function createMemoryServer(config?: {
 }): Server {
   const backend = loadBackendConfig();
 
-  if (backend.backend !== 'postgres' || !backend.activeProject) {
-    throw new Error('The new memory server only supports MEMORY_BACKEND=postgres.');
+  if (!backend.activeProject) {
+    throw new Error(
+      'No active project configured. Set MEMORY_ACTIVE_PROJECT and MEMORY_POSTGRES_PROJECT_REGISTRY.'
+    );
   }
 
   const databaseUrl = config?.databaseUrl || backend.activeProject.databaseUrl;
+
+  let parsedDatabaseUrl: URL;
+  try {
+    parsedDatabaseUrl = new URL(databaseUrl);
+  } catch {
+    throw new Error(
+      'Invalid database URL. Provide a valid PostgreSQL connection string (postgres:// or postgresql://).'
+    );
+  }
+
+  if (!['postgres:', 'postgresql:'].includes(parsedDatabaseUrl.protocol)) {
+    throw new Error(
+      'Invalid database URL. This server requires a PostgreSQL database URL (postgres:// or postgresql://).'
+    );
+  }
+
+  // Log Postgres backend activation (sanitize password from URL)
+  const sanitizedUrl = (() => {
+    const clone = new URL(parsedDatabaseUrl.toString());
+    if (clone.password) {
+      clone.password = '****';
+    }
+    clone.searchParams.delete('password');
+    return clone.toString();
+  })();
+  console.error(
+    `[Memory MCP] Postgres backend active (project="${backend.activeProject.projectId}", db="${sanitizedUrl}")`
+  );
   const openaiApiKey = config?.openaiApiKey || process.env.OPENAI_API_KEY;
   const defaultIndex = config?.defaultIndex || process.env.MEMORY_DEFAULT_INDEX;
   const projectRoot = config?.projectRoot || process.cwd();
