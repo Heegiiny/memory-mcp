@@ -5,6 +5,7 @@ import type {
   ResponseInput,
   ResponseInputItem,
 } from 'openai/resources/responses/responses';
+import { debugLog } from '../utils/logger.js';
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
@@ -174,8 +175,20 @@ export class LLMClient {
     };
 
     try {
+      debugLog('operation', 'LLM request', {
+        model,
+        messageCount: messages.length,
+        toolCount: tools.length,
+      });
+
       const response = await this.openai.responses.create(requestBody);
       const parsed = this.extractResponseContent(response);
+
+      debugLog('operation', 'LLM response', {
+        finishReason: response.incomplete_details?.reason ?? response.status ?? 'completed',
+        toolCallCount: parsed.toolCalls?.length || 0,
+        hasContent: !!parsed.content,
+      });
 
       return {
         responseId: response.id,
@@ -218,9 +231,25 @@ export class LLMClient {
     };
 
     try {
+      debugLog('operation', 'LLM request (simple chat)', {
+        model,
+        messageCount: 2, // system + user
+        toolCount: 0,
+      });
+
       const response = await this.openai.responses.create(requestBody);
+
+      debugLog('operation', 'LLM response (simple chat)', {
+        finishReason: response.incomplete_details?.reason ?? response.status ?? 'completed',
+        hasContent: !!response.output_text,
+      });
+
       return response.output_text || '';
     } catch (error) {
+      debugLog('operation', 'LLM request failed (simple chat)', {
+        model,
+        error: (error as Error).message,
+      });
       console.error('LLM API error:', error);
       throw new Error(`LLM request failed: ${(error as Error).message}`);
     }
