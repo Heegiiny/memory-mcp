@@ -23,7 +23,11 @@ Return your analysis as a JSON object with the following structure:
         "topic": "primary subject",
         "tags": ["tag1", "tag2"],
         "importance": "high|medium|low",
-        "confidence": 0.0-1.0
+        "confidence": 0.0-1.0,
+        "emotion": {
+          "intensity": 0.0-1.0,
+          "label": "emotion_name"
+        }
       }
     }
   ],
@@ -33,14 +37,17 @@ Return your analysis as a JSON object with the following structure:
 }
 ```
 
+**Note**: The `emotion` field is optional and should only be included when the text clearly conveys emotional context. Omit the field entirely for neutral or factual content (do not use `null`).
+
 ## Extraction Guidelines
 
 1. **Be concise**: Extract facts, not prose. Convert narrative text into clear, factual statements.
 2. **Preserve accuracy**: Don't infer or add information not present in the source.
 3. **Identify importance**: Mark critical information as "high", useful details as "medium", nice-to-know as "low".
 4. **Assign confidence**: Rate your confidence in the extraction (1.0 = certain, 0.5 = moderate, 0.3 = low).
-5. **Avoid redundancy**: Don't extract the same information multiple times.
-6. **Context matters**: Include enough context so the fact stands alone.
+5. **Detect emotion**: If the text conveys strong feelings or emotional significance, include `emotion` with intensity (0.0-1.0) and label (e.g., 'joy', 'frustration', 'pride', 'anxiety'). Use 0.8-1.0 for intense emotions, 0.5-0.7 for moderate, 0.2-0.4 for subtle. Omit if neutral.
+6. **Avoid redundancy**: Don't extract the same information multiple times.
+7. **Context matters**: Include enough context so the fact stands alone.
 
 ## Examples
 
@@ -87,6 +94,47 @@ PostgreSQL is an open-source relational database system. It supports advanced fe
 }
 ```
 
+### Example with Emotional Content
+
+Input Text:
+```
+I'm absolutely devastated that the main server went down during our product launch. The team worked so hard for this moment and everything fell apart because of the infrastructure failure. This was completely unacceptable.
+```
+
+Output (excerpt):
+```json
+{
+  "memories": [
+    {
+      "text": "Main server went down during product launch",
+      "metadata": {
+        "topic": "incident",
+        "tags": ["server-outage", "product-launch", "infrastructure"],
+        "importance": "high",
+        "confidence": 1.0,
+        "emotion": {
+          "intensity": 0.95,
+          "label": "sadness"
+        }
+      }
+    },
+    {
+      "text": "Server failure caused product launch to fail despite extensive team preparation",
+      "metadata": {
+        "topic": "incident",
+        "tags": ["server-outage", "impact"],
+        "importance": "high",
+        "confidence": 0.95,
+        "emotion": {
+          "intensity": 0.85,
+          "label": "frustration"
+        }
+      }
+    }
+  ]
+}
+```
+
 ## Special Cases
 
 - **Code snippets**: Extract what the code does, not the code itself
@@ -94,6 +142,7 @@ PostgreSQL is an open-source relational database system. It supports advanced fe
 - **Dates and versions**: Preserve exact values
 - **Names and entities**: Keep proper nouns intact
 - **Lists**: Break into individual facts when appropriate
+- **Emotional language**: Detect intensity from markers like "thrilled", "devastated", "frustrated", "excited", "anxious"; assign appropriate intensity (0.8-1.0 for strong, 0.5-0.7 for moderate) and label (joy, sadness, frustration, anxiety, etc.). Skip emotion metadata for neutral or factual content.
 
 ## Quality Standards
 
