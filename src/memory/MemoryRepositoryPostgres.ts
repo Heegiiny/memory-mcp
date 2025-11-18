@@ -191,11 +191,11 @@ export class MemoryRepositoryPostgres implements IMemoryRepository {
       const memoryId = memory.id || this.generateId();
       memoryIds.push(memoryId);
 
-      // Merge metadata: existing → default → new (only provided fields are modified)
+      // Merge metadata: default → existing → new (preserves existing, new overrides, defaults fill gaps)
       const existingMetadata = existingMetadataMap.get(memoryId) || {};
       const fullMetadata = {
-        ...existingMetadata,
         ...defaultMetadata,
+        ...existingMetadata,
         ...memory.metadata,
         index: indexName,
         project: this.projectId,
@@ -581,7 +581,7 @@ export class MemoryRepositoryPostgres implements IMemoryRepository {
 
     // Fetch existing memories to recalculate priority using PriorityCalculator
     const selectQuery = `
-      SELECT id, content, created_at, metadata, memory_type
+      SELECT id, content, created_at, metadata, memory_type, access_count, max_access_count
       FROM memories
       WHERE index_id = $1
         AND project = $2
@@ -594,6 +594,8 @@ export class MemoryRepositoryPostgres implements IMemoryRepository {
       created_at: Date;
       metadata: any;
       memory_type: string;
+      access_count: number;
+      max_access_count: number;
     }>(selectQuery, [indexId, this.projectId, idsToUpdate]);
 
     if (result.rows.length === 0) {
@@ -607,9 +609,9 @@ export class MemoryRepositoryPostgres implements IMemoryRepository {
       const currentMetadata = row.metadata || {};
       const currentDynamics = currentMetadata.dynamics || {};
 
-      // Increment access count
-      const newAccessCount = (currentDynamics.accessCount || 0) + 1;
-      const newMaxAccessCount = Math.max(currentDynamics.maxAccessCount || 0, newAccessCount);
+      // Increment access count (use column values as source of truth)
+      const newAccessCount = (row.access_count || 0) + 1;
+      const newMaxAccessCount = Math.max(row.max_access_count || 0, newAccessCount);
 
       // Build temporary memory record for priority calculation
       const tempMemory: MemoryRecord = {
