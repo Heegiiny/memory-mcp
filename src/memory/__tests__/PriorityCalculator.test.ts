@@ -6,7 +6,7 @@ import {
   getEmotionScore,
   computeTypeDependentPriority,
 } from '../PriorityCalculator.js';
-import { MemoryRecord } from '../types.js';
+import { MemoryRecord, Importance } from '../types.js';
 
 /**
  * Helper to create a minimal MemoryRecord for testing
@@ -281,7 +281,7 @@ describe('getUsageScore', () => {
       metadata: {
         index: 'test',
         dynamics: {
-          accessCount: 'not-a-number' as any,
+          accessCount: 'not-a-number' as unknown as number,
           initialPriority: 0.5,
           currentPriority: 0.5,
           createdAt: new Date().toISOString(),
@@ -327,9 +327,9 @@ describe('getImportanceScore', () => {
   });
 
   it('should return 0.3 for any other string value', () => {
-    expect(getImportanceScore('urgent' as any)).toBe(0.3);
-    expect(getImportanceScore('critical' as any)).toBe(0.3);
-    expect(getImportanceScore('' as any)).toBe(0.3);
+    expect(getImportanceScore('urgent' as unknown as Importance)).toBe(0.3);
+    expect(getImportanceScore('critical' as unknown as Importance)).toBe(0.3);
+    expect(getImportanceScore('' as unknown as Importance)).toBe(0.3);
   });
 });
 

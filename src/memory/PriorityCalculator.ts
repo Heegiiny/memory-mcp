@@ -73,7 +73,7 @@ export function getRecencyScore(
     | { content: { timestamp: string }; metadata?: { dynamics?: MemoryDynamics } },
   now: Date
 ): number {
-  const dynamics = (memory as any).metadata?.dynamics;
+  const dynamics = memory.metadata?.dynamics;
   const nowMs = now.getTime();
 
   // Try lastAccessedAt first, fall back to content.timestamp if invalid
@@ -147,7 +147,7 @@ export function getRecencyScore(
 export function getUsageScore(
   memory: MemoryRecord | { metadata?: { dynamics?: MemoryDynamics } }
 ): number {
-  const dynamics = (memory as any).metadata?.dynamics;
+  const dynamics = memory.metadata?.dynamics;
   const rawAccessCount = dynamics?.accessCount;
 
   // Validate accessCount: ensure it's a finite non-negative number

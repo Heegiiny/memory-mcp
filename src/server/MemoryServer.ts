@@ -12,6 +12,19 @@ import { MemoryController } from '../memory/MemoryController.js';
 import { PromptManager } from '../llm/PromptManager.js';
 import { LLMClient } from '../llm/LLMClient.js';
 import { MemoryAgent } from '../llm/MemoryAgent.js';
+import {
+  MemorizeToolArgs,
+  RecallToolArgs,
+  ForgetToolArgs,
+  RefineMemoriesToolArgs,
+  CreateIndexToolArgs,
+  ScanMemoriesToolArgs,
+} from '../memory/types.js';
+
+type RememberToolArgs = {
+  content: string;
+  metadata?: Record<string, unknown>;
+};
 
 function getEnvInt(name: string, fallback: number): number {
   const value = process.env[name];
@@ -352,24 +365,26 @@ export function createMemoryServer(config?: {
     try {
       switch (name) {
         case 'memorize':
-          return await controller.handleMemorizeTool(args as any);
+          return await controller.handleMemorizeTool((args ?? {}) as MemorizeToolArgs);
         case 'recall':
-          return await controller.handleRecallTool(args as any);
+          return await controller.handleRecallTool((args ?? {}) as RecallToolArgs);
         case 'forget':
-          return await controller.handleForgetTool(args as any);
+          return await controller.handleForgetTool((args ?? {}) as ForgetToolArgs);
         case 'refine_memories':
-          return await controller.handleRefineMemoriesTool(args as any);
+          return await controller.handleRefineMemoriesTool((args ?? {}) as RefineMemoriesToolArgs);
         case 'create_index':
-          return await controller.handleCreateIndexTool(args as any);
+          return await controller.handleCreateIndexTool((args ?? {}) as CreateIndexToolArgs);
         case 'list_indexes':
           return await controller.handleListIndexesTool();
         case 'scan_memories':
-          return await controller.handleScanMemoriesTool(args as any);
-        case 'remember':
+          return await controller.handleScanMemoriesTool((args ?? {}) as ScanMemoriesToolArgs);
+        case 'remember': {
+          const rememberArgs = (args ?? {}) as RememberToolArgs;
           return await controller.handleMemorizeTool({
-            input: (args as any).content,
-            metadata: (args as any).metadata,
-          } as any);
+            input: rememberArgs.content,
+            metadata: rememberArgs.metadata,
+          });
+        }
         default:
           throw new Error(`Unknown tool: ${name}`);
       }

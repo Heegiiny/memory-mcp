@@ -7,11 +7,19 @@ import {
   MemorizeResult,
   MemorizeDecision,
   MemoryToUpsert,
+  MemoryMetadata,
 } from '../../../../memory/types.js';
 import { ToolRuntime } from '../../runtime/ToolRuntime.js';
 import { MemoryAgentConfig, RequestContext, PreprocessedFileSummary } from '../../shared/index.js';
 import { safeJsonParse } from '../../shared/utils.js';
 import { debugLogOperation, debugLog } from '../../../../utils/logger.js';
+
+interface MemorizeLLMResponse {
+  decision?: Record<string, unknown>;
+  notes?: string;
+  summary?: string;
+  [key: string]: unknown;
+}
 
 /**
  * MemorizeOperation handles memory ingestion with automatic chunking,
@@ -79,27 +87,38 @@ export class MemorizeOperation {
       }
 
       return parsed.memories
-        .map((memory: any): MemoryToUpsert | null => {
-          const text = typeof memory?.text === 'string' ? memory.text.trim() : '';
+        .map((memoryEntry: unknown): MemoryToUpsert | null => {
+          if (!memoryEntry || typeof memoryEntry !== 'object') {
+            return null;
+          }
+
+          const candidate = memoryEntry as {
+            text?: unknown;
+            metadata?: unknown;
+            memoryType?: unknown;
+          };
+
+          const text = typeof candidate.text === 'string' ? candidate.text.trim() : '';
           if (!text) {
             return null;
           }
-          const metadata =
-            memory.metadata && typeof memory.metadata === 'object'
-              ? (memory.metadata as Record<string, unknown>)
+
+          const metadata: Partial<MemoryMetadata> =
+            candidate.metadata && typeof candidate.metadata === 'object'
+              ? { ...(candidate.metadata as Partial<MemoryMetadata>) }
               : {};
 
           // Preserve top-level memoryType field into metadata if present
-          if (memory.memoryType && typeof memory.memoryType === 'string') {
-            metadata.memoryType = memory.memoryType;
+          if (typeof candidate.memoryType === 'string') {
+            metadata.memoryType = candidate.memoryType as MemoryMetadata['memoryType'];
           }
 
           return {
             text,
             metadata,
-          } as MemoryToUpsert;
+          };
         })
-        .filter((memory: MemoryToUpsert | null): memory is MemoryToUpsert => Boolean(memory));
+        .filter((memory): memory is MemoryToUpsert => Boolean(memory));
     } catch (error) {
       console.warn('Failed to parse memory-analyzer output', error, raw?.slice?.(0, 200));
       return [];
@@ -540,7 +559,7 @@ export class MemorizeOperation {
       const responseText = await this.toolRuntime.runToolLoop(systemPrompt, userMessage, context);
 
       // Parse the JSON response with enhanced error handling
-      const result = safeJsonParse<any>(responseText, 'LLM response');
+      const result = safeJsonParse<MemorizeLLMResponse>(responseText, 'LLM response');
       const storedCount = context.storedMemoryIds.length;
 
       // Build decision from LLM response or heuristics
@@ -550,7 +569,12 @@ export class MemorizeOperation {
       const preprocessNotes = preprocessedSummaries
         .map((summary) => summary.notes)
         .filter((note): note is string => Boolean(note));
-      const llmNotes = result.notes || result.summary;
+      const llmNotes =
+        typeof result.notes === 'string'
+          ? result.notes
+          : typeof result.summary === 'string'
+            ? result.summary
+            : undefined;
 
       // Prepend action to notes if not already present
       let finalNotes = '';

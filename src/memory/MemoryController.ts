@@ -126,7 +126,7 @@ export class MemoryController {
   /**
    * Handle MEMORIZE tool
    */
-  async handleMemorizeTool(args: MemorizeToolArgs): Promise<any> {
+  async handleMemorizeTool(args: MemorizeToolArgs): Promise<McpContent> {
     try {
       const index = this.indexResolver.resolve(args.index);
       const projectMessage = await this.loadProjectSystemMessage(args.projectSystemMessagePath);
@@ -204,7 +204,7 @@ export class MemoryController {
   /**
    * Handle RECALL tool
    */
-  async handleRecallTool(args: RecallToolArgs): Promise<any> {
+  async handleRecallTool(args: RecallToolArgs): Promise<McpContent> {
     try {
       const index = this.indexResolver.resolve(args.index);
       const projectMessage = await this.loadProjectSystemMessage(args.projectSystemMessagePath);
@@ -286,7 +286,7 @@ export class MemoryController {
   /**
    * Handle FORGET tool
    */
-  async handleForgetTool(args: ForgetToolArgs): Promise<any> {
+  async handleForgetTool(args: ForgetToolArgs): Promise<McpContent> {
     try {
       const index = this.indexResolver.resolve(args.index);
       const projectMessage = await this.loadProjectSystemMessage(args.projectSystemMessagePath);
@@ -327,7 +327,7 @@ export class MemoryController {
   /**
    * Handle CREATE_INDEX tool
    */
-  async handleCreateIndexTool(args: CreateIndexToolArgs): Promise<any> {
+  async handleCreateIndexTool(args: CreateIndexToolArgs): Promise<McpContent> {
     try {
       const result: CreateIndexResult = await this.agent.createIndex(args);
 

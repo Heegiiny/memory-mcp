@@ -17,6 +17,7 @@ import {
   RefineMemoriesResult,
   ScanMemoriesResult,
   MemoryToUpsert,
+  MemoryMetadata,
   RefinementAction,
   UpdateRefinementAction,
   DeleteRefinementAction,
@@ -25,6 +26,8 @@ import {
   SearchResult,
   SearchDiagnostics,
   SearchStatus,
+  Importance,
+  Relationship,
 } from '../memory/types.js';
 import { MemorySearchError } from '../memory/MemorySearchError.js';
 import { loadRefinementConfig } from '../config/refinement.js';
@@ -39,6 +42,61 @@ import {
 } from './agent/shared/index.js';
 import { ToolRuntime } from './agent/runtime/index.js';
 import { MemorizeOperation } from './agent/operations/memorize/index.js';
+
+type ReflectionStatus = 'ok' | 'error';
+
+interface ReflectionBelief {
+  text: string;
+  memoryType: 'belief' | 'self';
+  kind: 'derived';
+  stability: 'stable';
+  topic: string;
+  derivedFromIds: string[];
+  importance?: Importance;
+  tags?: string[];
+  relationships?: Relationship[];
+}
+
+interface ReflectionResponse {
+  status: ReflectionStatus;
+  error?: string;
+  beliefs?: ReflectionBelief[];
+}
+
+interface ConsolidationPatternCandidate {
+  text?: string;
+  kind?: MemoryMetadata['kind'];
+  memoryType?: MemoryMetadata['memoryType'];
+  importance?: Importance;
+  topic?: string;
+  derivedFromIds?: string[];
+  relationships?: Relationship[];
+}
+
+interface RefineMemoriesPlanResponse {
+  actions?: RefinementAction[];
+  summary?: string;
+}
+
+const isStringArray = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((entry) => typeof entry === 'string');
+
+const isImportance = (value: unknown): value is Importance =>
+  value === 'low' || value === 'medium' || value === 'high';
+
+const isMemoryKind = (value: unknown): value is NonNullable<MemoryMetadata['kind']> =>
+  value === 'raw' || value === 'summary' || value === 'derived';
+
+const isRelationship = (value: unknown): value is Relationship =>
+  Boolean(
+    value &&
+      typeof value === 'object' &&
+      typeof (value as { targetId?: unknown }).targetId === 'string' &&
+      typeof (value as { type?: unknown }).type === 'string'
+  );
+
+const isRelationshipArray = (value: unknown): value is Relationship[] =>
+  Array.isArray(value) && value.every((entry) => isRelationship(entry));
 
 /**
  * MemoryAgent
@@ -357,7 +415,7 @@ export class MemoryAgent {
       const responseText = await this.toolRuntime.runToolLoop(systemPrompt, userMessage, context);
 
       // Parse the JSON response with enhanced error handling
-      const result = safeJsonParse<any>(responseText, 'recall LLM response');
+      const result = safeJsonParse<RecallResult>(responseText, 'recall LLM response');
 
       // Ensure access tracking happens for final returned memories
       // This guarantees tracking even if LLM short-circuits or uses cached results
@@ -549,7 +607,7 @@ export class MemoryAgent {
       const responseText = await this.toolRuntime.runToolLoop(systemPrompt, userMessage, context);
 
       // Parse the JSON response with enhanced error handling
-      const result = safeJsonParse<any>(responseText, 'forget LLM response');
+      const result = safeJsonParse<ForgetResult>(responseText, 'forget LLM response');
 
       endLog({
         deletedCount: result.deletedCount || 0,
@@ -587,7 +645,7 @@ export class MemoryAgent {
    */
   private async handleReflectionOperation(
     index: string,
-    scope?: any,
+    scope?: RefineMemoriesToolArgs['scope'],
     projectSystemMessage?: string,
     isDryRun: boolean = true
   ): Promise<RefineMemoriesResult> {
@@ -608,7 +666,7 @@ export class MemoryAgent {
       }
 
       // Convert beliefs to MemoryToUpsert format for storage
-      const beliefsToStore: MemoryToUpsert[] = reflectionResult.beliefs.map((belief: any) => ({
+      const beliefsToStore: MemoryToUpsert[] = reflectionResult.beliefs.map((belief) => ({
         text: belief.text,
         metadata: {
           index,
@@ -699,7 +757,7 @@ export class MemoryAgent {
     index: string,
     scope?: { topic?: string; minImportance?: string; seedIds?: string[] },
     projectSystemMessage?: string
-  ): Promise<{ beliefs: any[]; patternIds: string[] }> {
+  ): Promise<{ beliefs: ReflectionBelief[]; patternIds: string[] }> {
     try {
       // Search for pattern memories
       let filterExpression = '@metadata.memoryType = "pattern"';
@@ -765,7 +823,7 @@ export class MemoryAgent {
       const responseText = await this.llm.simpleChat(systemPrompt, userMessage);
 
       // Parse reflection response with enhanced error handling
-      const response = safeJsonParse<any>(responseText, 'reflection LLM response');
+      const response = safeJsonParse<ReflectionResponse>(responseText, 'reflection LLM response');
 
       // Validate response structure
       if (response.status !== 'ok') {
@@ -777,7 +835,7 @@ export class MemoryAgent {
       }
 
       // Validate each belief
-      const beliefs = response.beliefs;
+      const beliefs = response.beliefs as ReflectionBelief[];
       const validationErrors: string[] = [];
 
       for (let i = 0; i < beliefs.length; i++) {
@@ -853,12 +911,25 @@ export class MemoryAgent {
     }
   }
 
+  private normalizeConsolidationPattern(newMemory: MemoryToUpsert): ConsolidationPatternCandidate {
+    const metadata = newMemory.metadata ?? {};
+    return {
+      text: newMemory.text,
+      kind: metadata.kind ?? this.extractTopLevelKind(newMemory),
+      memoryType: metadata.memoryType ?? newMemory.memoryType,
+      importance: metadata.importance ?? this.extractTopLevelImportance(newMemory),
+      topic: metadata.topic ?? this.extractTopLevelTopic(newMemory),
+      derivedFromIds: metadata.derivedFromIds ?? this.extractTopLevelDerivedFromIds(newMemory),
+      relationships: metadata.relationships ?? this.extractTopLevelRelationships(newMemory),
+    };
+  }
+
   /**
    * Validate consolidation pattern responses from the LLM
    * Ensures all derivedFromIds and relationship targetIds reference valid episodic memory IDs
    */
   private validateConsolidationPatterns(
-    patterns: unknown,
+    patterns: ConsolidationPatternCandidate[],
     availableMemoryIds: Set<string>
   ): { valid: boolean; errors: string[] } {
     const errors: string[] = [];
@@ -870,7 +941,7 @@ export class MemoryAgent {
     }
 
     for (let i = 0; i < patterns.length; i++) {
-      const pattern = patterns[i] as any;
+      const pattern = patterns[i];
 
       // Check required fields
       if (!pattern.text) {
@@ -906,7 +977,7 @@ export class MemoryAgent {
       // Validate relationship targetIds
       if (Array.isArray(pattern.relationships)) {
         for (let j = 0; j < pattern.relationships.length; j++) {
-          const rel = pattern.relationships[j] as any;
+          const rel = pattern.relationships[j];
           if (!rel.targetId) {
             errors.push(`Pattern ${i}, relationship ${j}: missing required field 'targetId'`);
           } else if (!availableMemoryIds.has(rel.targetId)) {
@@ -997,7 +1068,10 @@ export class MemoryAgent {
       const responseText = await this.toolRuntime.runToolLoop(systemPrompt, userMessage, context);
 
       // Parse the JSON response with enhanced error handling
-      const result = safeJsonParse<any>(responseText, 'refine memories LLM response');
+      const result = safeJsonParse<RefineMemoriesPlanResponse>(
+        responseText,
+        'refine memories LLM response'
+      );
       const plannedActions: RefinementAction[] = Array.isArray(result.actions)
         ? result.actions
         : [];
@@ -1008,22 +1082,9 @@ export class MemoryAgent {
         // Extract pattern CREATE actions and normalize their structure
         // The LLM may return consolidation fields at top-level or inside metadata
         const patterns = plannedActions
-          .filter((a) => a.type === 'CREATE')
-          .map((a) => {
-            const newMemory = (a as any).newMemory;
-            // Normalize: gather all consolidation fields into a single shape for validation
-            return {
-              text: newMemory.text,
-              kind: newMemory.metadata?.kind ?? (newMemory as any).kind,
-              memoryType: newMemory.metadata?.memoryType ?? (newMemory as any).memoryType,
-              importance: newMemory.metadata?.importance ?? (newMemory as any).importance,
-              topic: newMemory.metadata?.topic ?? (newMemory as any).topic,
-              derivedFromIds:
-                newMemory.metadata?.derivedFromIds ?? (newMemory as any).derivedFromIds,
-              relationships: newMemory.metadata?.relationships ?? (newMemory as any).relationships,
-            };
-          })
-          .filter((m) => m.memoryType === 'pattern' || m.kind === 'derived');
+          .filter((action): action is CreateRefinementAction => action.type === 'CREATE')
+          .map((action) => this.normalizeConsolidationPattern(action.newMemory))
+          .filter((pattern) => pattern.memoryType === 'pattern' || pattern.kind === 'derived');
 
         if (patterns.length > 0) {
           // Build set of available memory IDs from actual repository contents
@@ -1055,7 +1116,7 @@ export class MemoryAgent {
           // Only validate patterns if we successfully fetched memory IDs
           if (!consolidationIdsUnavailable) {
             const patternValidation = this.validateConsolidationPatterns(
-              patterns as any,
+              patterns,
               availableMemoryIds
             );
             if (!patternValidation.valid) {
@@ -1070,9 +1131,10 @@ export class MemoryAgent {
             // Remove CREATE actions that are consolidation patterns
             const filteredActions = plannedActions.filter((action) => {
               if (action.type !== 'CREATE') return true;
-              const newMemory = (action as any).newMemory;
-              const memoryType = newMemory.metadata?.memoryType ?? (newMemory as any).memoryType;
-              const kind = newMemory.metadata?.kind ?? (newMemory as any).kind;
+              const memoryType =
+                action.newMemory.metadata?.memoryType ?? action.newMemory.memoryType;
+              const kind =
+                action.newMemory.metadata?.kind ?? this.extractTopLevelKind(action.newMemory);
               // Filter out pattern/derived memories from consolidation
               return !(memoryType === 'pattern' || kind === 'derived');
             });
@@ -1231,7 +1293,7 @@ export class MemoryAgent {
             break;
 
           default:
-            errors.push(`Unknown action type: ${(action as any).type}`);
+            errors.push(`Unknown action type: ${action.type}`);
             skippedCount++;
         }
       } catch (error) {
@@ -1372,29 +1434,53 @@ export class MemoryAgent {
   ): Promise<string[]> {
     // The LLM may return consolidation metadata either within the metadata object
     // or as top-level fields. Merge both sources to preserve all fields.
-    const asAny = action.newMemory as any;
-    const metadataBase = action.newMemory.metadata ?? {};
-
-    const mergedMetadata: any = {
-      ...metadataBase,
+    const mergedMetadata: Partial<MemoryMetadata> = {
+      ...(action.newMemory.metadata ?? {}),
     };
 
-    // Consolidation fields: merge from top-level or metadata
-    // Priority: use metadata version if present, otherwise top-level
-    const consolidationFields = [
-      'kind',
-      'memoryType',
-      'importance',
-      'topic',
-      'tags',
-      'derivedFromIds',
-      'relationships',
-    ];
+    if (mergedMetadata.memoryType === undefined && action.newMemory.memoryType) {
+      mergedMetadata.memoryType = action.newMemory.memoryType;
+    }
 
-    for (const field of consolidationFields) {
-      // If not already in metadata and exists at top level, copy it
-      if (!(field in metadataBase) && field in asAny) {
-        mergedMetadata[field] = asAny[field];
+    if (mergedMetadata.kind === undefined) {
+      const kind = this.extractTopLevelKind(action.newMemory);
+      if (kind) {
+        mergedMetadata.kind = kind;
+      }
+    }
+
+    if (mergedMetadata.importance === undefined) {
+      const importance = this.extractTopLevelImportance(action.newMemory);
+      if (importance) {
+        mergedMetadata.importance = importance;
+      }
+    }
+
+    if (mergedMetadata.topic === undefined) {
+      const topic = this.extractTopLevelTopic(action.newMemory);
+      if (topic) {
+        mergedMetadata.topic = topic;
+      }
+    }
+
+    if (mergedMetadata.tags === undefined) {
+      const tags = this.extractTopLevelTags(action.newMemory);
+      if (tags) {
+        mergedMetadata.tags = tags;
+      }
+    }
+
+    if (mergedMetadata.derivedFromIds === undefined) {
+      const derivedFromIds = this.extractTopLevelDerivedFromIds(action.newMemory);
+      if (derivedFromIds) {
+        mergedMetadata.derivedFromIds = derivedFromIds;
+      }
+    }
+
+    if (mergedMetadata.relationships === undefined) {
+      const relationships = this.extractTopLevelRelationships(action.newMemory);
+      if (relationships) {
+        mergedMetadata.relationships = relationships;
       }
     }
 
@@ -1402,7 +1488,7 @@ export class MemoryAgent {
     delete mergedMetadata.index;
     delete mergedMetadata.id;
 
-    const sanitizedMemory: any = {
+    const sanitizedMemory: MemoryToUpsert = {
       text: action.newMemory.text,
       metadata: mergedMetadata,
     };
@@ -1423,7 +1509,7 @@ export class MemoryAgent {
       mergedMetadata.memoryType === 'pattern' &&
       Array.isArray(mergedMetadata.derivedFromIds)
     ) {
-      const episodicIds = mergedMetadata.derivedFromIds as string[];
+      const episodicIds = mergedMetadata.derivedFromIds;
 
       try {
         // Fetch each episodic memory and mark as superseded
@@ -1626,5 +1712,42 @@ export class MemoryAgent {
         diagnostics: diagnostics.length > 0 ? diagnostics : undefined,
       };
     }
+  }
+
+  private extractTopLevelField<T>(
+    newMemory: MemoryToUpsert,
+    field: string,
+    predicate: (value: unknown) => value is T
+  ): T | undefined {
+    const rawValue = (newMemory as Record<string, unknown>)[field];
+    return predicate(rawValue) ? rawValue : undefined;
+  }
+
+  private extractTopLevelKind(newMemory: MemoryToUpsert): MemoryMetadata['kind'] | undefined {
+    return this.extractTopLevelField(newMemory, 'kind', isMemoryKind);
+  }
+
+  private extractTopLevelImportance(newMemory: MemoryToUpsert): Importance | undefined {
+    return this.extractTopLevelField(newMemory, 'importance', isImportance);
+  }
+
+  private extractTopLevelTopic(newMemory: MemoryToUpsert): string | undefined {
+    return this.extractTopLevelField(
+      newMemory,
+      'topic',
+      (value): value is string => typeof value === 'string' && value.trim().length > 0
+    );
+  }
+
+  private extractTopLevelTags(newMemory: MemoryToUpsert): string[] | undefined {
+    return this.extractTopLevelField(newMemory, 'tags', isStringArray);
+  }
+
+  private extractTopLevelDerivedFromIds(newMemory: MemoryToUpsert): string[] | undefined {
+    return this.extractTopLevelField(newMemory, 'derivedFromIds', isStringArray);
+  }
+
+  private extractTopLevelRelationships(newMemory: MemoryToUpsert): Relationship[] | undefined {
+    return this.extractTopLevelField(newMemory, 'relationships', isRelationshipArray);
   }
 }

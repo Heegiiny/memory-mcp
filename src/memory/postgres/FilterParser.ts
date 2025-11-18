@@ -611,11 +611,13 @@ const DENORMALIZED_COLUMNS: Record<string, { column: string; type: 'text' | 'int
 
 export interface SQLTranslation {
   sql: string;
-  params: any[];
+  params: unknown[];
 }
 
+type NormalizedOperator = '=' | '!=' | '>' | '<' | '>=' | '<=' | 'CONTAINS';
+
 class SQLTranslator {
-  private params: any[] = [];
+  private params: unknown[] = [];
   private paramIndex = 1;
 
   translate(ast: ASTNode): SQLTranslation {
@@ -626,7 +628,7 @@ class SQLTranslator {
     return { sql, params: this.params };
   }
 
-  private addParam(value: any): string {
+  private addParam(value: unknown): string {
     this.params.push(value);
     return `$${this.paramIndex++}`;
   }
@@ -649,7 +651,7 @@ class SQLTranslator {
     const { field, operator, value } = node;
 
     // Normalize operator (= and == are equivalent)
-    const normalizedOp = operator === '==' ? '=' : operator;
+    const normalizedOp: NormalizedOperator = operator === '==' ? '=' : operator;
 
     // Handle @id field
     if (field.source === 'id') {
@@ -682,14 +684,9 @@ class SQLTranslator {
       const denormalized = DENORMALIZED_COLUMNS[field.name];
 
       if (denormalized) {
-        return this.translateDenormalizedField(
-          denormalized,
-          normalizedOp as any,
-          value,
-          field.name
-        );
+        return this.translateDenormalizedField(denormalized, normalizedOp, value, field.name);
       } else {
-        return this.translateJSONBField(field.name, normalizedOp as any, value);
+        return this.translateJSONBField(field.name, normalizedOp, value);
       }
     }
 
@@ -704,7 +701,7 @@ class SQLTranslator {
 
   private translateDenormalizedField(
     columnInfo: { column: string; type: 'text' | 'integer' | 'array' },
-    operator: '=' | '!=' | '>' | '<' | '>=' | '<=' | 'CONTAINS',
+    operator: NormalizedOperator,
     value: LiteralNode,
     fieldName: string
   ): string {
@@ -784,7 +781,7 @@ class SQLTranslator {
 
   private translateJSONBField(
     fieldName: string,
-    operator: '=' | '!=' | '>' | '<' | '>=' | '<=' | 'CONTAINS',
+    operator: NormalizedOperator,
     value: LiteralNode
   ): string {
     // JSONB access for custom metadata fields

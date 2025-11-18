@@ -156,7 +156,7 @@ export class MemoryRepositoryPostgres implements IMemoryRepository {
     }
 
     // Fetch existing metadata for updates (memories with IDs)
-    const existingMetadataMap = new Map<string, any>();
+    const existingMetadataMap = new Map<string, Partial<MemoryMetadata>>();
     const updateIds = memories.filter((m) => m.id).map((m) => m.id!);
 
     if (updateIds.length > 0) {
@@ -168,11 +168,10 @@ export class MemoryRepositoryPostgres implements IMemoryRepository {
           AND project = $3
       `;
 
-      const existingResult = await this.pool.query<{ id: string; metadata: any }>(existingQuery, [
-        updateIds,
-        indexId,
-        this.projectId,
-      ]);
+      const existingResult = await this.pool.query<{ id: string; metadata: MemoryMetadata | null }>(
+        existingQuery,
+        [updateIds, indexId, this.projectId]
+      );
 
       for (const row of existingResult.rows) {
         existingMetadataMap.set(row.id, row.metadata || {});
@@ -180,7 +179,7 @@ export class MemoryRepositoryPostgres implements IMemoryRepository {
     }
 
     // Prepare batch insert with ON CONFLICT
-    const values: any[] = [];
+    const values: unknown[] = [];
     const memoryIds: string[] = [];
 
     for (let i = 0; i < memories.length; i++) {
@@ -360,7 +359,7 @@ export class MemoryRepositoryPostgres implements IMemoryRepository {
       targetId: string;
       type: string;
       confidence: number;
-      metadata: any;
+      metadata: Record<string, unknown>;
     }> = [];
 
     for (let i = 0; i < memories.length; i++) {
@@ -404,7 +403,7 @@ export class MemoryRepositoryPostgres implements IMemoryRepository {
 
       // Insert new relationships if any exist
       if (relationshipsToInsert.length > 0) {
-        const values: any[] = [];
+        const values: unknown[] = [];
         const placeholders: string[] = [];
 
         for (let i = 0; i < relationshipsToInsert.length; i++) {
@@ -592,7 +591,7 @@ export class MemoryRepositoryPostgres implements IMemoryRepository {
       id: string;
       content: string;
       created_at: Date;
-      metadata: any;
+      metadata: MemoryMetadata | null;
       memory_type: string;
       access_count: number;
       max_access_count: number;
@@ -601,12 +600,12 @@ export class MemoryRepositoryPostgres implements IMemoryRepository {
     if (result.rows.length === 0) {
       return;
     }
-
     const now = new Date();
-
     // Build update for each memory with recalculated priority
     for (const row of result.rows) {
-      const currentMetadata = row.metadata || {};
+      const currentMetadata: MemoryMetadata = row.metadata ?? {
+        index: indexName,
+      };
       const currentDynamics = currentMetadata.dynamics || {};
 
       // Increment access count (use column values as source of truth)
@@ -622,7 +621,7 @@ export class MemoryRepositoryPostgres implements IMemoryRepository {
         },
         metadata: {
           ...currentMetadata,
-          memoryType: row.memory_type as any,
+          memoryType: row.memory_type as MemoryMetadata['memoryType'],
           dynamics: {
             ...currentDynamics,
             accessCount: newAccessCount,
@@ -885,7 +884,7 @@ export class MemoryRepositoryPostgres implements IMemoryRepository {
           AND superseded_by_id IS NULL
       `;
 
-      const params: any[] = [`[${queryEmbedding.join(',')}]`, indexId, this.projectId];
+      const params: unknown[] = [`[${queryEmbedding.join(',')}]`, indexId, this.projectId];
 
       // Add filter expression if provided
       if (options?.filterExpression) {
@@ -922,28 +921,20 @@ export class MemoryRepositoryPostgres implements IMemoryRepository {
       const result = await this.pool.query<{
         id: string;
         content: string;
-        metadata: any;
+        metadata: MemoryMetadata | null;
         created_at: Date;
         semantic_score: number;
       }>(searchQuery, params);
 
       // Convert to SearchResult format
-      const memoryRecords: MemoryRecord[] = result.rows.map(
-        (row: {
-          id: string;
-          content: string;
-          metadata: any;
-          created_at: Date;
-          semantic_score: number;
-        }) => ({
-          id: row.id,
-          content: {
-            text: row.content,
-            timestamp: row.created_at.toISOString(),
-          },
-          metadata: row.metadata as MemoryMetadata,
-        })
-      );
+      const memoryRecords: MemoryRecord[] = result.rows.map((row) => ({
+        id: row.id,
+        content: {
+          text: row.content,
+          timestamp: row.created_at.toISOString(),
+        },
+        metadata: row.metadata ?? { index: indexName },
+      }));
 
       // Populate relationships from memory_relationships table
       if (includeMetadata) {
@@ -1078,7 +1069,7 @@ export class MemoryRepositoryPostgres implements IMemoryRepository {
       id: string;
       content: string;
       created_at: Date;
-      metadata: any;
+      metadata: MemoryMetadata | null;
     }>(
       `SELECT id, content, created_at, metadata
        FROM memories
@@ -1099,7 +1090,7 @@ export class MemoryRepositoryPostgres implements IMemoryRepository {
         text: row.content,
         timestamp: row.created_at.toISOString(),
       },
-      metadata: row.metadata as MemoryMetadata,
+      metadata: row.metadata ?? { index: indexName },
     };
 
     // Populate relationships from memory_relationships table
@@ -1137,7 +1128,7 @@ export class MemoryRepositoryPostgres implements IMemoryRepository {
       id: string;
       content: string;
       created_at: Date;
-      metadata: any;
+      metadata: MemoryMetadata | null;
     }>(
       `SELECT id, content, created_at, metadata
        FROM memories
@@ -1147,16 +1138,14 @@ export class MemoryRepositoryPostgres implements IMemoryRepository {
       [indexId, this.projectId, ids]
     );
 
-    const memories = result.rows.map(
-      (row: { id: string; content: string; created_at: Date; metadata: any }) => ({
-        id: row.id,
-        content: {
-          text: row.content,
-          timestamp: row.created_at.toISOString(),
-        },
-        metadata: row.metadata as MemoryMetadata,
-      })
-    );
+    const memories = result.rows.map((row) => ({
+      id: row.id,
+      content: {
+        text: row.content,
+        timestamp: row.created_at.toISOString(),
+      },
+      metadata: row.metadata ?? { index: indexName },
+    }));
 
     // Populate relationships from memory_relationships table
     await this.populateRelationships(memories);

@@ -1,4 +1,12 @@
-import { MemoryMetadata, MemoryType, Importance, RelationshipType } from '../memory/types.js';
+import {
+  MemoryMetadata,
+  MemoryType,
+  Importance,
+  RelationshipType,
+  MemoryDynamics,
+  Relationship,
+  EmotionInfo,
+} from '../memory/types.js';
 
 /**
  * Validates metadata against schema constraints.
@@ -140,58 +148,59 @@ export class MetadataValidator {
   /**
    * Validate dynamics object
    */
-  private static validateDynamics(dynamics: any): void {
+  private static validateDynamics(dynamics: unknown): void {
     if (typeof dynamics !== 'object' || dynamics === null) {
       throw new ValidationError('dynamics must be an object');
     }
+    const candidate = dynamics as Partial<MemoryDynamics>;
 
     // Validate stability if present
-    if (dynamics.stability !== undefined) {
-      if (!this.VALID_STABILITY_VALUES.includes(dynamics.stability)) {
+    if (candidate.stability !== undefined) {
+      if (!this.VALID_STABILITY_VALUES.includes(candidate.stability)) {
         throw new ValidationError(
-          `Invalid dynamics.stability: "${dynamics.stability}". Must be one of: ${this.VALID_STABILITY_VALUES.join(', ')}`
+          `Invalid dynamics.stability: "${candidate.stability}". Must be one of: ${this.VALID_STABILITY_VALUES.join(', ')}`
         );
       }
     }
 
     // Validate priority values if present
-    if (dynamics.initialPriority !== undefined) {
+    if (candidate.initialPriority !== undefined) {
       if (
-        typeof dynamics.initialPriority !== 'number' ||
-        dynamics.initialPriority < 0 ||
-        dynamics.initialPriority > 1
+        typeof candidate.initialPriority !== 'number' ||
+        candidate.initialPriority < 0 ||
+        candidate.initialPriority > 1
       ) {
         throw new ValidationError('dynamics.initialPriority must be a number between 0.0 and 1.0');
       }
     }
 
-    if (dynamics.currentPriority !== undefined) {
+    if (candidate.currentPriority !== undefined) {
       if (
-        typeof dynamics.currentPriority !== 'number' ||
-        dynamics.currentPriority < 0 ||
-        dynamics.currentPriority > 1
+        typeof candidate.currentPriority !== 'number' ||
+        candidate.currentPriority < 0 ||
+        candidate.currentPriority > 1
       ) {
         throw new ValidationError('dynamics.currentPriority must be a number between 0.0 and 1.0');
       }
     }
 
     // Validate accessCount if present
-    if (dynamics.accessCount !== undefined) {
+    if (candidate.accessCount !== undefined) {
       if (
-        typeof dynamics.accessCount !== 'number' ||
-        dynamics.accessCount < 0 ||
-        !Number.isInteger(dynamics.accessCount)
+        typeof candidate.accessCount !== 'number' ||
+        candidate.accessCount < 0 ||
+        !Number.isInteger(candidate.accessCount)
       ) {
         throw new ValidationError('dynamics.accessCount must be a non-negative integer');
       }
     }
 
     // Validate timestamps if present
-    if (dynamics.createdAt !== undefined && !this.isValidISO8601(dynamics.createdAt)) {
+    if (candidate.createdAt !== undefined && !this.isValidISO8601(candidate.createdAt)) {
       throw new ValidationError('dynamics.createdAt must be a valid ISO 8601 timestamp');
     }
 
-    if (dynamics.lastAccessedAt !== undefined && !this.isValidISO8601(dynamics.lastAccessedAt)) {
+    if (candidate.lastAccessedAt !== undefined && !this.isValidISO8601(candidate.lastAccessedAt)) {
       throw new ValidationError('dynamics.lastAccessedAt must be a valid ISO 8601 timestamp');
     }
   }
@@ -199,7 +208,7 @@ export class MetadataValidator {
   /**
    * Validate relationships array
    */
-  private static validateRelationships(relationships: any): void {
+  private static validateRelationships(relationships: unknown): void {
     if (!Array.isArray(relationships)) {
       throw new ValidationError('relationships must be an array');
     }
@@ -209,18 +218,24 @@ export class MetadataValidator {
         throw new ValidationError(`relationships[${index}] must be an object`);
       }
 
-      if (typeof rel.targetId !== 'string') {
+      const relationship = rel as Partial<Relationship>;
+
+      if (typeof relationship.targetId !== 'string') {
         throw new ValidationError(`relationships[${index}].targetId must be a string`);
       }
 
-      if (!this.VALID_RELATIONSHIP_TYPES.includes(rel.type)) {
+      if (!this.VALID_RELATIONSHIP_TYPES.includes(relationship.type as RelationshipType)) {
         throw new ValidationError(
           `relationships[${index}].type must be one of: ${this.VALID_RELATIONSHIP_TYPES.join(', ')}`
         );
       }
 
-      if (rel.weight !== undefined) {
-        if (typeof rel.weight !== 'number' || rel.weight < 0 || rel.weight > 1) {
+      if (relationship.weight !== undefined) {
+        if (
+          typeof relationship.weight !== 'number' ||
+          relationship.weight < 0 ||
+          relationship.weight > 1
+        ) {
           throw new ValidationError(
             `relationships[${index}].weight must be a number between 0.0 and 1.0`
           );
@@ -232,12 +247,14 @@ export class MetadataValidator {
   /**
    * Validate emotion object
    */
-  private static validateEmotion(emotion: any): void {
+  private static validateEmotion(emotion: unknown): void {
     if (typeof emotion !== 'object' || emotion === null) {
       throw new ValidationError('emotion must be an object');
     }
 
-    if (emotion.label !== undefined && typeof emotion.label !== 'string') {
+    const candidate = emotion as Partial<EmotionInfo>;
+
+    if (candidate.label !== undefined && typeof candidate.label !== 'string') {
       throw new ValidationError('emotion.label must be a string');
     }
   }

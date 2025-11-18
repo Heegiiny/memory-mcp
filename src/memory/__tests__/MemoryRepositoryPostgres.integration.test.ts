@@ -4,6 +4,7 @@ import { MemoryRepositoryPostgres } from '../MemoryRepositoryPostgres.js';
 import { PoolManager } from '../PoolManager.js';
 import { loadBackendConfig } from '../../config/backend.js';
 import { FakeEmbeddingService } from '../../../tests/helpers/FakeEmbeddingService.js';
+import type { EmbeddingService } from '../../llm/EmbeddingService.js';
 import type { MemoryToUpsert, MemoryMetadata, Importance } from '../types.js';
 
 /**
@@ -110,8 +111,7 @@ describe('MemoryRepositoryPostgres Integration Tests', () => {
     repository = new MemoryRepositoryPostgres(
       databaseUrl,
       TEST_PROJECT_ID,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      embeddingService as any
+      embeddingService as unknown as EmbeddingService
     );
 
     // Initial cleanup

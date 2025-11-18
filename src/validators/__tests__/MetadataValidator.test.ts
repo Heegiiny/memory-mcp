@@ -2,6 +2,8 @@ import { describe, it, expect } from '@jest/globals';
 import { MetadataValidator, ValidationError } from '../MetadataValidator.js';
 import { MemoryMetadata } from '../../memory/types.js';
 
+const forceType = <T>(value: unknown): T => value as T;
+
 describe('MetadataValidator', () => {
   describe('ValidationError', () => {
     it('should have correct name and message', () => {
@@ -65,7 +67,7 @@ describe('MetadataValidator', () => {
   describe('invalid enum fields', () => {
     it('should reject invalid memoryType', () => {
       const metadata: Partial<MemoryMetadata> = {
-        memoryType: 'unknown' as any,
+        memoryType: forceType<MemoryMetadata['memoryType']>('unknown'),
       };
 
       expect(() => MetadataValidator.validate(metadata)).toThrow(ValidationError);
@@ -76,7 +78,7 @@ describe('MetadataValidator', () => {
 
     it('should reject invalid importance', () => {
       const metadata: Partial<MemoryMetadata> = {
-        importance: 'urgent' as any,
+        importance: forceType<MemoryMetadata['importance']>('urgent'),
       };
 
       expect(() => MetadataValidator.validate(metadata)).toThrow(ValidationError);
@@ -87,7 +89,7 @@ describe('MetadataValidator', () => {
 
     it('should reject invalid source', () => {
       const metadata: Partial<MemoryMetadata> = {
-        source: 'api' as any,
+        source: forceType<MemoryMetadata['source']>('api'),
       };
 
       expect(() => MetadataValidator.validate(metadata)).toThrow(ValidationError);
@@ -98,7 +100,7 @@ describe('MetadataValidator', () => {
 
     it('should reject invalid kind', () => {
       const metadata: Partial<MemoryMetadata> = {
-        kind: 'other' as any,
+        kind: forceType<MemoryMetadata['kind']>('other'),
       };
 
       expect(() => MetadataValidator.validate(metadata)).toThrow(ValidationError);
@@ -111,7 +113,7 @@ describe('MetadataValidator', () => {
   describe('dynamics validation', () => {
     it('should reject non-object dynamics', () => {
       const metadata: Partial<MemoryMetadata> = {
-        dynamics: 'not-an-object' as any,
+        dynamics: forceType<MemoryMetadata['dynamics']>('not-an-object'),
       };
 
       expect(() => MetadataValidator.validate(metadata)).toThrow(ValidationError);
@@ -120,7 +122,7 @@ describe('MetadataValidator', () => {
 
     it('should reject null dynamics', () => {
       const metadata: Partial<MemoryMetadata> = {
-        dynamics: null as any,
+        dynamics: forceType<MemoryMetadata['dynamics']>(null),
       };
 
       expect(() => MetadataValidator.validate(metadata)).toThrow(ValidationError);
@@ -130,7 +132,7 @@ describe('MetadataValidator', () => {
     it('should reject invalid stability value', () => {
       const metadata: Partial<MemoryMetadata> = {
         dynamics: {
-          stability: 'invalid' as any,
+          stability: forceType<NonNullable<MemoryMetadata['dynamics']>['stability']>('invalid'),
           initialPriority: 0.5,
           currentPriority: 0.5,
           accessCount: 0,
@@ -147,7 +149,7 @@ describe('MetadataValidator', () => {
     it('should reject non-number initialPriority', () => {
       const metadata: Partial<MemoryMetadata> = {
         dynamics: {
-          initialPriority: 'not-a-number' as any,
+          initialPriority: forceType<number>('not-a-number'),
           currentPriority: 0.5,
           accessCount: 0,
           createdAt: new Date().toISOString(),
@@ -196,7 +198,7 @@ describe('MetadataValidator', () => {
       const metadata: Partial<MemoryMetadata> = {
         dynamics: {
           initialPriority: 0.5,
-          currentPriority: 'invalid' as any,
+          currentPriority: forceType<number>('invalid'),
           accessCount: 0,
           createdAt: new Date().toISOString(),
         },
@@ -245,7 +247,7 @@ describe('MetadataValidator', () => {
         dynamics: {
           initialPriority: 0.5,
           currentPriority: 0.5,
-          accessCount: 'invalid' as any,
+          accessCount: forceType<number>('invalid'),
           createdAt: new Date().toISOString(),
         },
       };
@@ -339,7 +341,7 @@ describe('MetadataValidator', () => {
   describe('relationships validation', () => {
     it('should reject non-array relationships', () => {
       const metadata: Partial<MemoryMetadata> = {
-        relationships: 'not-an-array' as any,
+        relationships: forceType<MemoryMetadata['relationships']>('not-an-array'),
       };
 
       expect(() => MetadataValidator.validate(metadata)).toThrow(ValidationError);
@@ -348,7 +350,7 @@ describe('MetadataValidator', () => {
 
     it('should reject relationships element that is not an object', () => {
       const metadata: Partial<MemoryMetadata> = {
-        relationships: ['not-an-object'] as any,
+        relationships: forceType<MemoryMetadata['relationships']>(['not-an-object']),
       };
 
       expect(() => MetadataValidator.validate(metadata)).toThrow(ValidationError);
@@ -359,7 +361,7 @@ describe('MetadataValidator', () => {
 
     it('should reject relationships element that is null', () => {
       const metadata: Partial<MemoryMetadata> = {
-        relationships: [null] as any,
+        relationships: forceType<MemoryMetadata['relationships']>([null]),
       };
 
       expect(() => MetadataValidator.validate(metadata)).toThrow(ValidationError);
@@ -370,11 +372,11 @@ describe('MetadataValidator', () => {
 
     it('should reject missing targetId', () => {
       const metadata: Partial<MemoryMetadata> = {
-        relationships: [
+        relationships: forceType<MemoryMetadata['relationships']>([
           {
             type: 'supports',
-          } as any,
-        ],
+          },
+        ]),
       };
 
       expect(() => MetadataValidator.validate(metadata)).toThrow(ValidationError);
@@ -385,12 +387,12 @@ describe('MetadataValidator', () => {
 
     it('should reject non-string targetId', () => {
       const metadata: Partial<MemoryMetadata> = {
-        relationships: [
+        relationships: forceType<MemoryMetadata['relationships']>([
           {
             targetId: 123,
             type: 'supports',
-          } as any,
-        ],
+          },
+        ]),
       };
 
       expect(() => MetadataValidator.validate(metadata)).toThrow(ValidationError);
@@ -401,12 +403,12 @@ describe('MetadataValidator', () => {
 
     it('should reject invalid relationship type', () => {
       const metadata: Partial<MemoryMetadata> = {
-        relationships: [
+        relationships: forceType<MemoryMetadata['relationships']>([
           {
             targetId: 'target-1',
-            type: 'invalid-type' as any,
+            type: 'invalid-type',
           },
-        ],
+        ]),
       };
 
       expect(() => MetadataValidator.validate(metadata)).toThrow(ValidationError);
@@ -417,13 +419,13 @@ describe('MetadataValidator', () => {
 
     it('should reject non-number weight', () => {
       const metadata: Partial<MemoryMetadata> = {
-        relationships: [
+        relationships: forceType<MemoryMetadata['relationships']>([
           {
             targetId: 'target-1',
             type: 'supports',
-            weight: 'not-a-number' as any,
+            weight: 'not-a-number',
           },
-        ],
+        ]),
       };
 
       expect(() => MetadataValidator.validate(metadata)).toThrow(ValidationError);
@@ -508,7 +510,7 @@ describe('MetadataValidator', () => {
     });
 
     it('should validate all relationship types', () => {
-      const validTypes: Array<string> = [
+      const validTypes: Array<NonNullable<MemoryMetadata['relationships']>[number]['type']> = [
         'summarizes',
         'example_of',
         'is_generalization_of',
@@ -525,7 +527,7 @@ describe('MetadataValidator', () => {
           relationships: [
             {
               targetId: 'target-1',
-              type: type as any,
+              type,
             },
           ],
         };
@@ -538,7 +540,7 @@ describe('MetadataValidator', () => {
   describe('emotion validation', () => {
     it('should reject non-object emotion', () => {
       const metadata: Partial<MemoryMetadata> = {
-        emotion: 'not-an-object' as any,
+        emotion: forceType<MemoryMetadata['emotion']>('not-an-object'),
       };
 
       expect(() => MetadataValidator.validate(metadata)).toThrow(ValidationError);
@@ -547,7 +549,7 @@ describe('MetadataValidator', () => {
 
     it('should reject null emotion', () => {
       const metadata: Partial<MemoryMetadata> = {
-        emotion: null as any,
+        emotion: forceType<MemoryMetadata['emotion']>(null),
       };
 
       expect(() => MetadataValidator.validate(metadata)).toThrow(ValidationError);
@@ -557,7 +559,7 @@ describe('MetadataValidator', () => {
     it('should reject non-string emotion label', () => {
       const metadata: Partial<MemoryMetadata> = {
         emotion: {
-          label: 123 as any,
+          label: forceType<string>(123),
         },
       };
 
@@ -578,7 +580,7 @@ describe('MetadataValidator', () => {
     it('should reject non-number emotion intensity', () => {
       const metadata: Partial<MemoryMetadata> = {
         emotion: {
-          intensity: 'not-a-number' as any,
+          intensity: forceType<number>('not-a-number'),
         },
       };
 
@@ -629,7 +631,7 @@ describe('MetadataValidator', () => {
   describe('array and date fields', () => {
     it('should reject non-array tags', () => {
       const metadata: Partial<MemoryMetadata> = {
-        tags: 'not-an-array' as any,
+        tags: forceType<MemoryMetadata['tags']>('not-an-array'),
       };
 
       expect(() => MetadataValidator.validate(metadata)).toThrow(ValidationError);
@@ -638,7 +640,7 @@ describe('MetadataValidator', () => {
 
     it('should reject tags with non-string elements', () => {
       const metadata: Partial<MemoryMetadata> = {
-        tags: ['valid', 123, 'another'] as any,
+        tags: forceType<MemoryMetadata['tags']>(['valid', 123, 'another']),
       };
 
       expect(() => MetadataValidator.validate(metadata)).toThrow(ValidationError);
@@ -655,7 +657,7 @@ describe('MetadataValidator', () => {
 
     it('should reject non-string date', () => {
       const metadata: Partial<MemoryMetadata> = {
-        date: 123 as any,
+        date: forceType<string>(123),
       };
 
       expect(() => MetadataValidator.validate(metadata)).toThrow(ValidationError);
@@ -718,7 +720,7 @@ describe('MetadataValidator', () => {
 
     it('should reject non-array relatedIds', () => {
       const metadata: Partial<MemoryMetadata> = {
-        relatedIds: 'not-an-array' as any,
+        relatedIds: forceType<MemoryMetadata['relatedIds']>('not-an-array'),
       };
 
       expect(() => MetadataValidator.validate(metadata)).toThrow(ValidationError);
@@ -727,7 +729,7 @@ describe('MetadataValidator', () => {
 
     it('should reject relatedIds with non-string elements', () => {
       const metadata: Partial<MemoryMetadata> = {
-        relatedIds: ['id1', 123, 'id3'] as any,
+        relatedIds: forceType<MemoryMetadata['relatedIds']>(['id1', 123, 'id3']),
       };
 
       expect(() => MetadataValidator.validate(metadata)).toThrow(ValidationError);
@@ -744,7 +746,7 @@ describe('MetadataValidator', () => {
 
     it('should reject non-array derivedFromIds', () => {
       const metadata: Partial<MemoryMetadata> = {
-        derivedFromIds: 'not-an-array' as any,
+        derivedFromIds: forceType<MemoryMetadata['derivedFromIds']>('not-an-array'),
       };
 
       expect(() => MetadataValidator.validate(metadata)).toThrow(ValidationError);
@@ -753,7 +755,7 @@ describe('MetadataValidator', () => {
 
     it('should reject derivedFromIds with non-string elements', () => {
       const metadata: Partial<MemoryMetadata> = {
-        derivedFromIds: ['id1', false, 'id3'] as any,
+        derivedFromIds: forceType<MemoryMetadata['derivedFromIds']>(['id1', false, 'id3']),
       };
 
       expect(() => MetadataValidator.validate(metadata)).toThrow(ValidationError);

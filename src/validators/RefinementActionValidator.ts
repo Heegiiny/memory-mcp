@@ -115,9 +115,9 @@ export class UpdateActionValidator implements ActionValidator {
       }
 
       // Validate priority if present (using a generic metadata field approach)
-      const priority = (updateAction.metadataUpdates as any).priority;
-      if (priority !== undefined) {
-        if (typeof priority !== 'number' || priority < 0 || priority > 1) {
+      const priorityValue = updateAction.metadataUpdates.priority;
+      if (priorityValue !== undefined) {
+        if (typeof priorityValue !== 'number' || priorityValue < 0 || priorityValue > 1) {
           errors.push('Metadata field "priority" must be a number between 0 and 1');
         }
       }
