@@ -256,6 +256,11 @@ MEMORY_DEBUG_VALIDATION=true
 MEMORY_DEBUG_ACCESS_TRACKING=true
 MEMORY_DEBUG_REPOSITORY=true
 
+# Observability and logging
+MEMORY_LOG_LEVEL=info          # Log level: debug, info, warn, error (default: info)
+MEMORY_LOG_FORMAT=pretty       # Log format: json, pretty (default: pretty)
+MEMORY_DB_SLOW_QUERY_MS=200   # Slow query threshold in milliseconds (default: 200)
+
 # Refinement tuning
 MEMORY_REFINE_DEFAULT_BUDGET=100
 MEMORY_REFINE_ALLOW_DELETE=false

@@ -20,6 +20,7 @@ import {
   CreateIndexToolArgs,
   ScanMemoriesToolArgs,
 } from '../memory/types.js';
+import { logInfo, logError, startTimer } from '../utils/logger.js';
 
 type RememberToolArgs = {
   content: string;
@@ -76,9 +77,12 @@ export function createMemoryServer(config?: {
     clone.searchParams.delete('password');
     return clone.toString();
   })();
-  console.error(
-    `[Memory MCP] Postgres backend active (project="${backend.activeProject.projectId}", db="${sanitizedUrl}")`
-  );
+  logInfo('server', 'postgres-backend-active', {
+    meta: {
+      projectId: backend.activeProject.projectId,
+      database: sanitizedUrl,
+    },
+  });
   const openaiApiKey = config?.openaiApiKey || process.env.OPENAI_API_KEY;
   const defaultIndex = config?.defaultIndex || process.env.MEMORY_DEFAULT_INDEX;
   const projectRoot = config?.projectRoot || process.cwd();
@@ -114,12 +118,14 @@ export function createMemoryServer(config?: {
   );
 
   // Log configuration summary at startup
-  console.error(
-    `[Memory MCP] Configuration: ` +
-      `embedding=${embeddingConfig.model} (${embeddingConfig.dimensions}d), ` +
-      `project=${backend.activeProject.projectId}, ` +
-      `model=${process.env.MEMORY_MODEL || 'gpt-5-mini'}`
-  );
+  logInfo('server', 'configuration-loaded', {
+    meta: {
+      embeddingModel: embeddingConfig.model,
+      embeddingDimensions: embeddingConfig.dimensions,
+      projectId: backend.activeProject.projectId,
+      llmModel: process.env.MEMORY_MODEL || 'gpt-5-mini',
+    },
+  });
 
   const agent = new MemoryAgent(llmClient, promptManager, repository, fileLoader, {
     largeFileThresholdBytes: getEnvInt('MEMORY_LARGE_FILE_THRESHOLD_BYTES', 256 * 1024),
@@ -362,34 +368,81 @@ export function createMemoryServer(config?: {
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
 
+    // Calculate rough argument size for logging
+    const argsSize = args ? JSON.stringify(args).length : 0;
+
+    // Start request timer
+    const timer = startTimer('mcp-server', `tool:${name}`, 'info');
+
+    logInfo('mcp-server', 'request:start', {
+      meta: {
+        tool: name,
+        argumentsSize: argsSize,
+      },
+    });
+
     try {
+      let result;
       switch (name) {
         case 'memorize':
-          return await controller.handleMemorizeTool((args ?? {}) as MemorizeToolArgs);
+          result = await controller.handleMemorizeTool((args ?? {}) as MemorizeToolArgs);
+          break;
         case 'recall':
-          return await controller.handleRecallTool((args ?? {}) as RecallToolArgs);
+          result = await controller.handleRecallTool((args ?? {}) as RecallToolArgs);
+          break;
         case 'forget':
-          return await controller.handleForgetTool((args ?? {}) as ForgetToolArgs);
+          result = await controller.handleForgetTool((args ?? {}) as ForgetToolArgs);
+          break;
         case 'refine_memories':
-          return await controller.handleRefineMemoriesTool((args ?? {}) as RefineMemoriesToolArgs);
+          result = await controller.handleRefineMemoriesTool(
+            (args ?? {}) as RefineMemoriesToolArgs
+          );
+          break;
         case 'create_index':
-          return await controller.handleCreateIndexTool((args ?? {}) as CreateIndexToolArgs);
+          result = await controller.handleCreateIndexTool((args ?? {}) as CreateIndexToolArgs);
+          break;
         case 'list_indexes':
-          return await controller.handleListIndexesTool();
+          result = await controller.handleListIndexesTool();
+          break;
         case 'scan_memories':
-          return await controller.handleScanMemoriesTool((args ?? {}) as ScanMemoriesToolArgs);
+          result = await controller.handleScanMemoriesTool((args ?? {}) as ScanMemoriesToolArgs);
+          break;
         case 'remember': {
           const rememberArgs = (args ?? {}) as RememberToolArgs;
-          return await controller.handleMemorizeTool({
+          result = await controller.handleMemorizeTool({
             input: rememberArgs.content,
             metadata: rememberArgs.metadata,
           });
+          break;
         }
         default:
           throw new Error(`Unknown tool: ${name}`);
       }
+
+      timer.end({
+        meta: {
+          tool: name,
+          status: 'success',
+        },
+      });
+
+      return result;
     } catch (error) {
-      console.error(`Error handling tool "${name}":`, error);
+      timer.end({
+        meta: {
+          tool: name,
+          status: 'error',
+        },
+      });
+
+      logError('mcp-server', 'request:error', {
+        message: `Error handling tool "${name}"`,
+        error: error as Error,
+        meta: {
+          tool: name,
+        },
+      });
+
       return {
         content: [
           {

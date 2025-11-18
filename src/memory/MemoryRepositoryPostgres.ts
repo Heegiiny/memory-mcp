@@ -1,4 +1,4 @@
-import { Pool } from 'pg';
+import { Pool, QueryResult, QueryResultRow } from 'pg';
 import { randomUUID } from 'crypto';
 import type { EmbeddingService } from '../llm/EmbeddingService.js';
 import {
@@ -16,9 +16,10 @@ import { loadRefinementConfig } from '../config/refinement.js';
 import { computeTypeDependentPriority } from './PriorityCalculator.js';
 import { MetadataValidator, ValidationError } from '../validators/MetadataValidator.js';
 import { MemorySearchError } from './MemorySearchError.js';
-import { debugLog } from '../utils/logger.js';
+import { debugLog, logDebug, logWarn, logError } from '../utils/logger.js';
 import { parseFilterExpression, FilterParserError } from './postgres/FilterParser.js';
 import { formatRelativeTime } from '../utils/dateUtils.js';
+import { loadLoggingConfig } from '../config/logging.js';
 
 /**
  * MemoryRepositoryPostgres
@@ -36,6 +37,7 @@ export class MemoryRepositoryPostgres implements IMemoryRepository {
   private projectId: string;
   private embeddingService?: EmbeddingService;
   private databaseUrl: string;
+  private loggingConfig = loadLoggingConfig();
 
   /**
    * @param databaseUrl - PostgreSQL connection string for this project
@@ -47,6 +49,54 @@ export class MemoryRepositoryPostgres implements IMemoryRepository {
     this.projectId = projectId;
     this.embeddingService = embeddingService;
     this.databaseUrl = databaseUrl;
+  }
+
+  /**
+   * Wrap pool.query with timing instrumentation and slow query logging
+   */
+  private async runQuery<T extends QueryResultRow = QueryResultRow>(
+    label: string,
+    text: string,
+    params?: unknown[]
+  ): Promise<QueryResult<T>> {
+    const start = Date.now();
+
+    try {
+      const result = await this.pool.query<T>(text, params);
+      const durationMs = Date.now() - start;
+
+      // Log all queries at debug level
+      logDebug('db-repository', `query:${label}`, {
+        meta: {
+          durationMs,
+          rowCount: result.rowCount,
+        },
+      });
+
+      // Log slow queries at warn level
+      if (durationMs > this.loggingConfig.slowQueryThresholdMs) {
+        logWarn('db-repository', `slow-query:${label}`, {
+          message: `Query exceeded ${this.loggingConfig.slowQueryThresholdMs}ms threshold`,
+          meta: {
+            durationMs,
+            rowCount: result.rowCount,
+            threshold: this.loggingConfig.slowQueryThresholdMs,
+          },
+        });
+      }
+
+      return result;
+    } catch (error) {
+      const durationMs = Date.now() - start;
+      logError('db-repository', `query-error:${label}`, {
+        message: `Query failed after ${durationMs}ms`,
+        error: error instanceof Error ? error : new Error(String(error)),
+        meta: {
+          durationMs,
+        },
+      });
+      throw error;
+    }
   }
 
   /**
@@ -92,7 +142,8 @@ export class MemoryRepositoryPostgres implements IMemoryRepository {
    * Resolve index UUID from index name, creating if necessary
    */
   private async resolveIndexId(indexName: string): Promise<string> {
-    const result = await this.pool.query<{ id: string }>(
+    const result = await this.runQuery<{ id: string }>(
+      'resolve-index',
       `INSERT INTO memory_indexes (project, name, description)
        VALUES ($1, $2, $3)
        ON CONFLICT (project, name) DO UPDATE
@@ -169,7 +220,8 @@ export class MemoryRepositoryPostgres implements IMemoryRepository {
           AND project = $3
       `;
 
-      const existingResult = await this.pool.query<{ id: string; metadata: MemoryMetadata | null }>(
+      const existingResult = await this.runQuery<{ id: string; metadata: MemoryMetadata | null }>(
+        'fetch-existing-metadata',
         existingQuery,
         [updateIds, indexId, this.projectId]
       );
@@ -327,7 +379,7 @@ export class MemoryRepositoryPostgres implements IMemoryRepository {
       RETURNING id
     `;
 
-    const result = await this.pool.query<{ id: string }>(query, values);
+    const result = await this.runQuery<{ id: string }>('upsert-memories', query, values);
 
     // Sync relationships to memory_relationships table
     const upsertedIds = result.rows.map((row: { id: string }) => row.id);
@@ -835,7 +887,8 @@ export class MemoryRepositoryPostgres implements IMemoryRepository {
 
     try {
       // Resolve index ID
-      const indexResult = await this.pool.query<{ id: string }>(
+      const indexResult = await this.runQuery<{ id: string }>(
+        'search-resolve-index',
         'SELECT id FROM memory_indexes WHERE project = $1 AND name = $2',
         [this.projectId, indexName]
       );
@@ -919,13 +972,13 @@ export class MemoryRepositoryPostgres implements IMemoryRepository {
       searchQuery += ` ORDER BY semantic_score DESC LIMIT $${params.length + 1}`;
       params.push(limit);
 
-      const result = await this.pool.query<{
+      const result = await this.runQuery<{
         id: string;
         content: string;
         metadata: MemoryMetadata | null;
         created_at: Date;
         semantic_score: number;
-      }>(searchQuery, params);
+      }>('vector-search', searchQuery, params);
 
       // Convert to SearchResult format
       const memoryRecords: MemoryRecord[] = result.rows.map((row) => ({
