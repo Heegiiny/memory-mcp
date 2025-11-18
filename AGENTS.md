@@ -40,4 +40,5 @@
 - Use `ProjectFileLoader` safeguards when ingesting files; respect `MEMORY_MAX_FILE_BYTES` to avoid large payload failures.
 
 ## Imperfect Memory Goals
+
 - Align architectural or prompt changes with the simulation principles captured in `docs/SIMULATED_BRAIN.md`, which explains how we map cognitive concepts (decay, reinforcement, reconstruction, interference) onto the MCP.
