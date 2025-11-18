@@ -46,12 +46,22 @@ describe('MemoryRepositoryPostgres Integration Tests', () => {
   /**
    * Helper to query memories directly from the database
    */
-  async function getMemoryFromDb(id: string): Promise<unknown> {
+  async function getMemoryFromDb(id: string): Promise<{
+    access_count: number;
+    current_priority: number;
+    [key: string]: unknown;
+  } | null> {
     const result = await testPool.query('SELECT * FROM memories WHERE id = $1 AND project = $2', [
       id,
       TEST_PROJECT_ID,
     ]);
-    return result.rows[0] || null;
+    return (
+      (result.rows[0] as {
+        access_count: number;
+        current_priority: number;
+        [key: string]: unknown;
+      }) || null
+    );
   }
 
   /**
@@ -583,15 +593,17 @@ describe('MemoryRepositoryPostgres Integration Tests', () => {
 
       // Get initial state
       const initialDb = await getMemoryFromDb(id);
-      expect(initialDb.access_count).toBe(0);
+      expect(initialDb).not.toBeNull();
+      expect(initialDb!.access_count).toBe(0);
 
       // Update access stats
       await repository.updateAccessStats(TEST_INDEX, [id]);
 
       // Check updated state
       const updatedDb = await getMemoryFromDb(id);
-      expect(updatedDb.access_count).toBe(1);
-      expect(updatedDb.current_priority).toBeGreaterThan(initialDb.current_priority);
+      expect(updatedDb).not.toBeNull();
+      expect(updatedDb!.access_count).toBe(1);
+      expect(updatedDb!.current_priority).toBeGreaterThan(initialDb!.current_priority);
     });
 
     it('should limit updates to topN memories', async () => {
@@ -610,8 +622,10 @@ describe('MemoryRepositoryPostgres Integration Tests', () => {
       const mem1 = await getMemoryFromDb(ids[0]);
       const mem4 = await getMemoryFromDb(ids[3]);
 
-      expect(mem1.access_count).toBe(1);
-      expect(mem4.access_count).toBe(0);
+      expect(mem1).not.toBeNull();
+      expect(mem4).not.toBeNull();
+      expect(mem1!.access_count).toBe(1);
+      expect(mem4!.access_count).toBe(0);
     });
 
     it('should update metadata.dynamics fields', async () => {
