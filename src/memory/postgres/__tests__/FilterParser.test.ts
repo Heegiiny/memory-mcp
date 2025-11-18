@@ -29,14 +29,14 @@ describe('parseFilterExpression', () => {
 
     it('should parse metadata field with boolean literal', () => {
       const result = parseFilterExpression('@metadata.someFlag = true');
-      expect(result.sql).toMatch(/metadata->>'someFlag' = \$1/);
-      expect(result.params).toEqual(['true']);
+      expect(result.sql).toMatch(/\(metadata->>'someFlag'\)::boolean = \$1/);
+      expect(result.params).toEqual([true]);
     });
 
     it('should parse metadata field with false boolean', () => {
       const result = parseFilterExpression('@metadata.someFlag = false');
-      expect(result.sql).toMatch(/metadata->>'someFlag' = \$1/);
-      expect(result.params).toEqual(['false']);
+      expect(result.sql).toMatch(/\(metadata->>'someFlag'\)::boolean = \$1/);
+      expect(result.params).toEqual([false]);
     });
   });
 
@@ -208,7 +208,7 @@ describe('parseFilterExpression', () => {
 
       it('should throw error for equality on tags array', () => {
         expect(() => parseFilterExpression('@metadata.tags = "foo"')).toThrow(
-          /Equality comparison not supported for array field tags. Use CONTAINS instead./
+          /Operator = not supported for array field tags. Use CONTAINS instead./
         );
       });
 
@@ -229,14 +229,14 @@ describe('parseFilterExpression', () => {
 
     it('should convert number to string for JSONB equality', () => {
       const result = parseFilterExpression('@metadata.customField = 42');
-      expect(result.sql).toBe("metadata->>'customField' = $1");
-      expect(result.params).toEqual(['42']);
+      expect(result.sql).toBe("(metadata->>'customField')::numeric = $1");
+      expect(result.params).toEqual([42]);
     });
 
     it('should convert boolean to string for JSONB equality', () => {
       const result = parseFilterExpression('@metadata.customBool = true');
-      expect(result.sql).toBe("metadata->>'customBool' = $1");
-      expect(result.params).toEqual(['true']);
+      expect(result.sql).toBe("(metadata->>'customBool')::boolean = $1");
+      expect(result.params).toEqual([true]);
     });
 
     it('should use JSONB containment for CONTAINS on custom field', () => {
@@ -393,21 +393,20 @@ describe('parseFilterExpression', () => {
 
     it('should handle negative zero', () => {
       const result = parseFilterExpression('@metadata.value = -0');
-      expect(result.sql).toMatch(/metadata->>'value' = \$1/);
-      // For JSONB fields, numbers are converted to strings
-      expect(result.params).toEqual(['0']);
+      expect(result.sql).toMatch(/\(metadata->>'value'\)::numeric = \$1/);
+      expect(result.params).toEqual([-0]);
     });
 
     it('should handle decimal numbers', () => {
       const result = parseFilterExpression('@metadata.score = 3.14');
-      expect(result.sql).toMatch(/metadata->>'score' = \$1/);
-      expect(result.params).toEqual(['3.14']);
+      expect(result.sql).toMatch(/\(metadata->>'score'\)::numeric = \$1/);
+      expect(result.params).toEqual([3.14]);
     });
 
     it('should handle negative decimal numbers', () => {
       const result = parseFilterExpression('@metadata.score = -3.14');
-      expect(result.sql).toMatch(/metadata->>'score' = \$1/);
-      expect(result.params).toEqual(['-3.14']);
+      expect(result.sql).toMatch(/\(metadata->>'score'\)::numeric = \$1/);
+      expect(result.params).toEqual([-3.14]);
     });
   });
 
