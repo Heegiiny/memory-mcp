@@ -14,6 +14,8 @@ import type {
   ListIndexesResult,
   MemorizeToolArgs,
   MemorizeResult,
+  RecallToolArgs,
+  RecallResult,
   ScanMemoriesToolArgs,
   ScanMemoriesResult,
   ForgetToolArgs,
@@ -172,6 +174,14 @@ export class TestServerHarness {
   }
 
   /**
+   * Call recall tool and return parsed result.
+   */
+  async callRecall(args: RecallToolArgs): Promise<RecallResult> {
+    const mcpResponse = await this.controller.handleRecallTool(args);
+    return this.parseJsonResponse<RecallResult>(mcpResponse);
+  }
+
+  /**
    * Call scan_memories tool and return parsed result.
    */
   async callScanMemories(args: ScanMemoriesToolArgs): Promise<ScanMemoriesResult> {
@@ -232,6 +242,25 @@ export class TestServerHarness {
     }
 
     return result.rows[0].dims;
+  }
+
+  /**
+   * Compute cosine similarity score for a memory against a query vector.
+   * Uses pgvector's <=> operator: 1 - (embedding <=> query_vector)
+   */
+  async computeCosineScore(memoryId: string, queryVector: number[]): Promise<number | null> {
+    const result = await this.pool.query(
+      `SELECT 1 - (embedding <=> $1::vector) AS score
+      FROM memories
+      WHERE project = $2 AND id = $3`,
+      [JSON.stringify(queryVector), this.projectId, memoryId]
+    );
+
+    if (result.rows.length === 0) {
+      return null;
+    }
+
+    return result.rows[0].score;
   }
 
   /**
