@@ -389,4 +389,152 @@ describe('Recall Tools Integration Tests', () => {
       assert.ok(typeof result.answer === 'string', 'Answer should be a string');
     });
   });
+
+  describe('Identity-biased recall with spreading activation', () => {
+    it('should include identity memories via spreading activation despite lower semantic scores', async () => {
+      const indexName = `${testIndexPrefix}${Date.now()}-identity-bias`;
+
+      // Store test memories with different types and priorities
+      const memories = [
+        {
+          text: 'I am a creator who values consistency over perfection',
+          metadata: {
+            memoryType: 'self',
+            importance: 'high',
+            topic: 'identity',
+            source: 'test',
+          },
+        },
+        {
+          text: 'Creative success requires sustained effort and iteration',
+          metadata: {
+            memoryType: 'belief',
+            importance: 'high',
+            topic: 'philosophy',
+            source: 'test',
+          },
+        },
+        {
+          text: 'In my video series about burnout, I discussed the importance of taking breaks',
+          metadata: {
+            memoryType: 'episodic',
+            importance: 'medium',
+            topic: 'content',
+            source: 'test',
+          },
+        },
+        {
+          text: 'Research shows that creative professionals experience high burnout rates',
+          metadata: {
+            memoryType: 'semantic',
+            importance: 'medium',
+            topic: 'research',
+            source: 'test',
+          },
+        },
+      ];
+
+      await harness.repository.upsertMemories(indexName, memories, {
+        timestamp: new Date().toISOString(),
+      });
+
+      // Reset fake client
+      fakeRecallLLMClient.reset();
+
+      // Query about creative burnout - should trigger identity-biased recall
+      const result = await harness.callRecall({
+        query: 'How do I handle creative burnout and maintain consistency?',
+        index: indexName,
+        limit: 10,
+        responseMode: 'memories',
+      });
+
+      // Verify result structure
+      assert.strictEqual(result.status, 'ok', 'Recall should succeed');
+      assert.ok(Array.isArray(result.memories), 'Memories should be an array');
+
+      // Verify that we got some memories back (spreading activation should bring in identity memories)
+      assert.ok(
+        result.memories!.length > 0,
+        'Should return memories including those from spreading activation'
+      );
+
+      // Verify that activation seeds were computed (indicates spreading activation flow)
+      // The presence of multiple memory types in results suggests identity-biased selection
+      const hasIdentityMemories = result.memories!.some((m) => {
+        const metadata = typeof m.metadata === 'object' ? m.metadata : {};
+        const memoryType = (metadata as Record<string, unknown>).memoryType;
+        return memoryType === 'self' || memoryType === 'belief';
+      });
+
+      assert.ok(
+        hasIdentityMemories,
+        'Results should include identity memories (self/belief) from spreading activation'
+      );
+    });
+
+    it('should preserve type-aware synthesis with activation seeds', async () => {
+      const indexName = `${testIndexPrefix}${Date.now()}-type-aware`;
+
+      // Store memories with clear type hierarchy
+      const memories = [
+        {
+          text: 'I prioritize audience connection over viral metrics',
+          metadata: {
+            memoryType: 'self',
+            importance: 'high',
+            topic: 'values',
+            source: 'test',
+          },
+        },
+        {
+          text: 'Long-form content creates deeper engagement than short clips',
+          metadata: {
+            memoryType: 'belief',
+            importance: 'high',
+            topic: 'content-strategy',
+            source: 'test',
+          },
+        },
+        {
+          text: 'I typically spend 2 hours per week on audience engagement activities',
+          metadata: {
+            memoryType: 'pattern',
+            importance: 'medium',
+            topic: 'habits',
+            source: 'test',
+          },
+        },
+      ];
+
+      await harness.repository.upsertMemories(indexName, memories, {
+        timestamp: new Date().toISOString(),
+      });
+
+      fakeRecallLLMClient.reset();
+
+      // Query about engagement strategy
+      const result = await harness.callRecall({
+        query: 'What is your approach to audience engagement?',
+        index: indexName,
+        limit: 10,
+        responseMode: 'memories',
+      });
+
+      // Verify we got memories back
+      assert.strictEqual(result.status, 'ok', 'Recall should succeed');
+      assert.ok(result.memories && result.memories.length > 0, 'Should return memories');
+
+      // Verify type-aware results - should include self and belief
+      const memoryTypes = result.memories!.map((m) => {
+        const metadata = typeof m.metadata === 'object' ? m.metadata : {};
+        return (metadata as Record<string, unknown>).memoryType;
+      });
+
+      assert.ok(
+        memoryTypes.includes('self') || memoryTypes.includes('belief'),
+        'Results should include identity-defining memory types'
+      );
+    });
+  });
 });

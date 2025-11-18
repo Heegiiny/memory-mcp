@@ -9,6 +9,7 @@ import {
   SearchDiagnostics,
   Importance,
   Relationship,
+  MemoryType,
 } from './types.js';
 import { IMemoryRepository, DatabaseInfo, IndexInfo, IndexSummary } from './IMemoryRepository.js';
 import { PoolManager } from './PoolManager.js';

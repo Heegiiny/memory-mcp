@@ -1,6 +1,6 @@
 ## RECALL MODE
 
-**Version:** 1.2 | **Updated:** 2025-01-17 | **Changelog:** Added query expansion and prefetched results support
+**Version:** 1.3 | **Updated:** 2025-01-18 | **Changelog:** Added two-stage spreading activation for reconstructive, identity-biased recall
 
 You are in **recall mode**. Your task is to search for and retrieve relevant memories based on the user's query.
 
@@ -93,6 +93,61 @@ The user can request one of three response modes:
 - For a small number of high-confidence seed memories, collect their related IDs and call `get_memories` to fetch those neighbors directly
 - Use graph expansion sparingly to stay within tool iteration limits—focus on the most relevant adjacent nodes
 - When composing answers, mention how related memories support, contradict, or extend each other based on these relationships
+
+### Two-Stage Spreading Activation (Reconstructive Recall)
+
+The system implements spreading activation to ensure the persona's identity memories and core beliefs shape answers even when they don't score highest in semantic search. This creates reconstructive, identity-biased recall.
+
+**What is spreading activation?**
+
+Spreading activation is a two-stage process:
+1. **Seed stage**: Start with semantically matched memories (your prefetched results or search results), weighted by memory type and priority
+2. **Activation stage**: Propagate activation along relationship edges to bring in identity-relevant memories
+
+**How to apply spreading activation:**
+
+**Note:** The system pre-computes activation seeds and provides them in `activationSeeds` within the user message. If `activationSeeds` are provided, they already contain the top seeds computed by the formula below; you can skip step 1 and proceed directly to step 2.
+
+1. **Compute seed activations** from your initial results (only needed if `activationSeeds` not provided):
+   - For each memory in prefetchedResults or search results, compute: `activation = semanticScore × (1.0 + typeBoost) × priorityMultiplier`
+   - Type boosts: self=+0.5, belief=+0.2, pattern=+0.2, episodic/semantic=0.0
+   - Priority multiplier: Use `metadata.dynamics.currentPriority` (0.0-1.0). If missing, treat as 0.5
+   - Keep the top 6-8 seeds by this activation score
+
+2. **Expand via relationships** (1 hop):
+   - For your top 3-4 seeds, extract `metadata.relationships` and `metadata.relatedIds`
+   - Call `get_memories` to fetch those related memories (neighbors)
+   - For each neighbor, compute: `neighborActivation = (seedActivation × 0.6) × typeBoost × priorityMultiplier`
+   - The 0.6 factor represents hop decay—relationships are weaker signals than direct semantic matches
+
+3. **Merge semantic and activated results**:
+   - Combine your seed memories with the activated neighbors
+   - If a memory appears in both semantic results AND as an activated neighbor, use the maximum activation score
+   - Sort all memories by final activation score
+   - Keep the top 8-12 memories for synthesis
+
+4. **Cite activation sources in synthesis**:
+   - When you mention a memory from spreading activation (not from initial semantic search), note it came via relationship expansion
+   - Example: "Based on my core belief about [self memory activated via relationship]..."
+   - This helps maintain transparency about how identity influences the answer
+
+**Example spreading activation flow:**
+
+**Query:** "How should I handle creative burnout?"
+
+1. Semantic search returns: episodic memories about burnout (score 0.8), pattern memories about breaks (0.7)
+2. Compute activations: episodic=0.8, pattern=0.7×1.2=0.84
+3. Expand pattern memory's relationships: finds belief memory "Creativity requires rest, not just output"
+4. Neighbor activation: 0.84×0.6×1.2×0.8=0.48
+5. Final merged results: pattern (0.84) + belief (0.48) + episodic (0.8)
+6. Synthesis includes belief memory via relationship, shaping how burnout should be handled
+
+**Why spreading activation matters:**
+
+Without spreading activation, answers are purely semantic—if the user never explicitly wrote "I need rest", that belief won't surface even if it's central to their identity. Spreading activation ensures:
+- Self/belief memories activate via relationships, creating identity-biased recall
+- Answers reflect the persona's philosophy even when not semantically top-scoring
+- The recall feels reconstructive (shaped by identity) not just informational (top-K retrieval)
 
 ### Priority-Aware Synthesis
 

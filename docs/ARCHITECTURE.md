@@ -808,7 +808,9 @@ MCP Layer: recall tool
     ↓
 Controller: Resolve index, load project context
     ↓
-Agent: Compose prompt (base + recall)
+Agent: Compose prompt (base + recall v1.3 with spreading activation)
+    ↓
+Agent: Compute activation seeds (semantic score × type boost × priority)
     ↓
 LLM: Decide to use search_memories tool
     ↓
@@ -820,7 +822,12 @@ Repository: Update access stats (fire-and-forget)
     ↓
 Results: [ { id, content, score, metadata } ]
     ↓
-LLM: Synthesize answer from search results
+LLM: Apply two-stage spreading activation:
+    1. Compute seed activation scores (type-weighted, priority-boosted)
+    2. Traverse relationship edges (1 hop with 0.6 decay) for identity memories
+    3. Merge semantic results with activated neighbors
+    ↓
+LLM: Synthesize answer from semantically relevant + activated identity memories
     ↓
 Result: { status: 'ok', answer: "...", supportingMemories: [...] }
 ```

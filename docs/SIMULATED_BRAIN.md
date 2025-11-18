@@ -1,7 +1,8 @@
 # SIMULATED_BRAIN.md
 
-> **Version:** 1.0  
-> **Last Updated:** 2025-11-17
+> **Version:** 1.1
+> **Last Updated:** 2025-01-18
+> **Changes:** Documented implemented two-stage spreading activation for reconstructive, identity-biased recall
 
 ## Purpose
 
@@ -15,7 +16,7 @@ We treat memory as an **active, reconstructive process** that drifts, decays, an
 2. **Typed Memories with Differential Decay.** Ensure `Self` and `Belief` memories remain resilient compared to `Episodic` events. Treat type metadata as the main lever for long-term personality stability.
 3. **Consolidation During Sleep.** Continue investing in the `refine_memories` tool to mimic offline reorganization: merging duplicates, generating summaries, promoting stability, and synthesizing new beliefs from episodic evidence.
 4. **Identity-Biased Recall.** The recall flow must synthesize answers through the lens of `Self` and `Belief` memories (per the Type-Aware Synthesis prompt strategy) rather than returning verbatim search hits.
-5. **Associative Linking.** Encourage spreading activation by traversing relationship graphs and vector similarity neighborhoods, forming or strengthening links when concepts repeatedly co-occur.
+5. **Associative Linking & Spreading Activation.** The recall flow now implements explicit spreading activation by traversing relationship edges to activate identity-relevant memories even when semantically distant. Future work: automatically form or strengthen links when concepts repeatedly co-occur in the same recall session.
 6. **Reconsolidation Drift.** Treat every recall as a chance to soften or reshape content. Eventually, refined updates should rewrite memories—subtly biasing them toward the new context—mirroring the mutability of human recollection.
 7. **Interference and Ambiguity.** Embrace conflicting or overlapping memories. Retrieval should occasionally blend nearby memories or acknowledge uncertainty, letting interference surface as a feature rather than a bug.
 8. **Functional Forgetting.** Prefer making memories inaccessible (priority < 0.1) over hard deletes; deletions should be intentional, while decay keeps the mind fallible.
@@ -43,9 +44,10 @@ We treat memory as an **active, reconstructive process** that drifts, decays, an
 - Leverage embeddings for implicit semantic proximity (`search_memories`) and the `memory_relationships` table for explicit edges (`supports`, `contradicts`, etc.).
 - When a salient memory is retrieved, proactively load its neighbors (`get_memories` by relationship) so recall feels like "that reminds me..." moments.
 - Future work: log memories recalled together in the same run and automatically form/strengthen links (neurons that fire together wire together).
-- Model recall as a two-stage process:
-  1. **Seed selection.** Run semantic search, then weight candidates by `currentPriority` to form the initial activation list.
-  2. **Spreading activation.** Propagate a portion of each seed’s activation along relationships (respecting weights and hop budgets) and include highly activated neighbors in synthesis. This is how identity-biased recall persistently drags self/belief content into answers.
+- Model recall as a two-stage process (now implemented in `prompts/memory-recall.txt` v1.3):
+  1. **Seed selection.** Run semantic search, then weight candidates by `currentPriority` and memory type to form the initial activation list. Activation formula: `semanticScore × (1.0 + typeBoost) × priorityMultiplier` where type boosts are: self=+0.5, belief=+0.2, pattern=+0.2, episodic/semantic=0.0.
+  2. **Spreading activation.** Propagate activation along relationship edges (1 hop with 0.6 decay) to bring in identity-relevant neighbors. Include activated neighbors in synthesis based on final activation score. This is how identity-biased recall persistently drags self/belief content into answers even when they don't score highest semantically.
+  3. **Merged synthesis.** Combine semantically matched memories with relationally activated memories, ensuring core beliefs and identity shape the answer while maintaining semantic relevance.
 
 ### Consolidation & Abstraction
 

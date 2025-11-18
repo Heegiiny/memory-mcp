@@ -536,3 +536,60 @@ export interface RefineMemoriesResult {
   /** Error message if status is 'error' */
   error?: string;
 }
+
+/**
+ * Represents a seed memory for spreading activation with its computed activation score.
+ * Used during the seed stage of recall to prepare memories for relationship propagation.
+ */
+export interface ActivationSeed {
+  /** Memory ID */
+  id: string;
+
+  /** Computed activation score: semanticScore × (1.0 + typeBoost) × priorityMultiplier */
+  activation: number;
+
+  /** Memory type for debugging and understanding activation */
+  memoryType?: MemoryType;
+
+  /** Current priority score (0.0-1.0) used in activation computation */
+  priority?: number;
+}
+
+/**
+ * Represents one step in the spreading activation propagation through relationship edges.
+ * Used for observability and debugging to understand how activation flows through the memory graph.
+ */
+export interface ActivationTrace {
+  /** Source memory ID where activation originated */
+  sourceId: string;
+
+  /** Relationship type connecting source to target */
+  relationshipType: RelationshipType;
+
+  /** Target memory ID being activated */
+  targetId: string;
+
+  /** Activation score before propagation */
+  sourceActivation: number;
+
+  /** Activation score after decay and weighting */
+  targetActivation: number;
+
+  /** Number of hops from original seed (1-based) */
+  hopCount: number;
+}
+
+/**
+ * Extended search diagnostics including activation trace information.
+ * Optionally includes spreading activation details for debugging and analysis.
+ */
+export interface ActivationDiagnostics {
+  /** Seeds used for spreading activation */
+  seeds?: ActivationSeed[];
+
+  /** Trace of activation propagation through relationships */
+  traces?: ActivationTrace[];
+
+  /** Final activated memories with their final activation scores */
+  activatedMemoryIds?: Array<{ id: string; finalActivation: number }>;
+}

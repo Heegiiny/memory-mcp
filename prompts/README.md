@@ -45,13 +45,22 @@ Guides the agent in extracting and storing atomic memories from text or files.
 
 Guides the agent in searching for and synthesizing information from stored memories.
 
-**Purpose:** Retrieve relevant memories and optionally synthesize answers
+**Purpose:** Retrieve relevant memories and optionally synthesize answers using reconstructive, identity-biased two-stage spreading activation
 
 **Tools available:** `search_memories`, `get_memories`
 
 **Model used:** GPT-5 (for complex query understanding and synthesis)
 
-**Version:** 1.1 - Added priority-aware synthesis guidance to privilege high-salience memories in answers
+**Version:** 1.3 - Added two-stage spreading activation for reconstructive, identity-biased recall
+
+**Key concepts:**
+
+- **Two-stage spreading activation**: Seed stage (semantic search) + activation stage (relationship propagation)
+- **Type-based activation boost**: Self (0.5×) and belief (0.2×) memories get stronger activation signals
+- **Priority-weighted expansion**: High-priority memories propagate stronger activation
+- **1-hop relationship expansion**: Traverses relationship edges to surface identity-relevant memories
+- **Merged synthesis**: Combines semantically matched memories with relationally activated memories
+- **Identity-biased results**: Answers reflect the persona's core beliefs even when not semantically top-scoring
 
 ### memory-forget.txt
 
