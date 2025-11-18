@@ -1,5 +1,6 @@
 import { LLMClient } from './LLMClient.js';
 import { PromptManager } from './PromptManager.js';
+import { ReconsolidationExecutor } from './ReconsolidationExecutor.js';
 import { IMemoryRepository } from '../memory/IMemoryRepository.js';
 import { ProjectFileLoader } from '../memory/ProjectFileLoader.js';
 import {
@@ -28,6 +29,8 @@ import {
   SearchStatus,
   Importance,
   Relationship,
+  ReconsolidationPlan,
+  ConsolidationReport,
 } from '../memory/types.js';
 import { MemorySearchError } from '../memory/MemorySearchError.js';
 import { loadRefinementConfig } from '../config/refinement.js';
@@ -78,6 +81,11 @@ interface RefineMemoriesPlanResponse {
   summary?: string;
 }
 
+/** Recall response payload including optional reconsolidation plan */
+interface RecallPayload extends RecallResult {
+  reconsolidationPlan?: ReconsolidationPlan;
+}
+
 const isStringArray = (value: unknown): value is string[] =>
   Array.isArray(value) && value.every((entry) => typeof entry === 'string');
 
@@ -105,6 +113,7 @@ const isRelationshipArray = (value: unknown): value is Relationship[] =>
 export class MemoryAgent {
   private toolRuntime: ToolRuntime;
   private memorizeOperation: MemorizeOperation;
+  private reconsolidationExecutor: ReconsolidationExecutor;
   private projectId?: string;
 
   constructor(
@@ -127,6 +136,9 @@ export class MemoryAgent {
       this.toolRuntime,
       config
     );
+
+    // Initialize reconsolidation executor
+    this.reconsolidationExecutor = new ReconsolidationExecutor(repo);
   }
 
   /**
@@ -358,7 +370,6 @@ export class MemoryAgent {
       trackedMemoryIds: new Set(),
       searchDiagnostics: [], // Initialize diagnostics array
       operationLog: [],
-      validationMessages: [],
     };
 
     try {
@@ -404,10 +415,6 @@ export class MemoryAgent {
         prefetchedResults = mergedResults;
       }
 
-      // Compute activation seeds for spreading activation if we have prefetched results
-      const activationSeeds =
-        prefetchedResults.length > 0 ? this.computeActivationSeeds(prefetchedResults) : [];
-
       const userMessage = JSON.stringify({
         query: args.query,
         index,
@@ -415,13 +422,47 @@ export class MemoryAgent {
         baseFilterExpression, // Pre-converted from structured filters
         responseMode: args.responseMode || 'answer',
         prefetchedResults, // Prefetched results from query expansion (empty if disabled)
-        activationSeeds, // Computed activation seeds for spreading activation guidance
+        enableReconsolidation: Boolean(args.enableReconsolidation), // New: enable memory reconsolidation during recall
       });
 
       const responseText = await this.toolRuntime.runToolLoop(systemPrompt, userMessage, context);
 
-      // Parse the JSON response with enhanced error handling
-      const result = safeJsonParse<RecallResult>(responseText, 'recall LLM response');
+      // Parse the JSON response with enhanced error handling, supporting optional reconsolidation plan
+      const payload = safeJsonParse<RecallPayload>(responseText, 'recall LLM response');
+
+      // Separate reconsolidation plan from main result
+      const { reconsolidationPlan, ...result } = payload;
+
+      // Execute reconsolidation if enabled and plan is present (derived memories, supersessions, or sleep cycles)
+      let consolidationReport: ConsolidationReport | undefined;
+      if (
+        args.enableReconsolidation &&
+        reconsolidationPlan &&
+        (reconsolidationPlan.derivedMemories?.length ||
+          reconsolidationPlan.supersessionPairs?.length ||
+          reconsolidationPlan.sleepCycleTargets?.length)
+      ) {
+        try {
+          // Pass trackedMemoryIds for security validation
+          consolidationReport = await this.reconsolidationExecutor.execute(
+            reconsolidationPlan,
+            index,
+            context.trackedMemoryIds
+          );
+          debugLog(
+            'reconsolidation',
+            `Recall consolidation: created=${consolidationReport.createdMemoryIds.length}, ` +
+              `superseded=${consolidationReport.supersededPairs.length}, ` +
+              `duration=${consolidationReport.durationMs}ms`
+          );
+        } catch (error) {
+          // Log error but don't fail recall - reconsolidation is best-effort
+          console.error(
+            'Reconsolidation execution error:',
+            error instanceof Error ? error.message : String(error)
+          );
+        }
+      }
 
       // Ensure access tracking happens for final returned memories
       // This guarantees tracking even if LLM short-circuits or uses cached results
@@ -480,6 +521,9 @@ export class MemoryAgent {
         supportingCount,
         searchStatus,
         hasAnswer: Boolean(result.answer),
+        consolidation: consolidationReport
+          ? `created=${consolidationReport.createdMemoryIds.length}, superseded=${consolidationReport.supersededPairs.length}`
+          : undefined,
       });
 
       return {
@@ -491,6 +535,7 @@ export class MemoryAgent {
         searchStatus,
         searchDiagnostics:
           context.searchDiagnostics.length > 0 ? context.searchDiagnostics : undefined,
+        consolidationReport: args.enableReconsolidation ? consolidationReport : undefined,
       };
     } catch (error) {
       console.error('Recall error:', error);
@@ -589,7 +634,6 @@ export class MemoryAgent {
       trackedMemoryIds: new Set(),
       searchDiagnostics: [],
       operationLog: [],
-      validationMessages: [],
       forgetContext: {
         dryRun: isDryRun,
         explicitMemoryIds: explicitIds,
@@ -1054,7 +1098,6 @@ export class MemoryAgent {
         trackedMemoryIds: new Set(),
         searchDiagnostics: [],
         operationLog: [],
-        validationMessages: [],
       };
 
       // Conditionally include consolidation-specific prompt for pattern extraction
@@ -1722,61 +1765,12 @@ export class MemoryAgent {
     }
   }
 
-  /**
-   * Compute activation seeds for spreading activation from search results.
-   * Each seed gets an activation score based on semantic match, memory type, and priority.
-   *
-   * Formula: activation = semanticScore × (1.0 + typeBoost) × priorityMultiplier
-   * Type boosts: self=+0.5, belief=+0.2, pattern=+0.2, episodic/semantic=0.0
-   * Priority multiplier uses metadata.dynamics.currentPriority (0.0-1.0), defaults to 0.5
-   */
-  private computeActivationSeeds(
-    results: SearchResult[]
-  ): Array<{ id: string; activation: number; memoryType?: string; priority?: number }> {
-    const clamp = (value: number, min: number, max: number): number =>
-      Math.max(min, Math.min(max, value));
-
-    const getTypeBoost = (memoryType?: string): number => {
-      switch (memoryType) {
-        case 'self':
-          return 0.5;
-        case 'belief':
-          return 0.2;
-        case 'pattern':
-          return 0.2;
-        default:
-          return 0.0;
-      }
-    };
-
-    return results
-      .map((result) => {
-        // Clamp semantic score to [0, 1] to prevent abuse
-        const semanticScore = clamp(result.score ?? 0.5, 0, 1);
-        const memoryType = result.metadata?.memoryType;
-        const typeBoost = getTypeBoost(memoryType);
-        // Clamp priority to [0, 1] to ensure bounded weighting
-        const priority = clamp(result.metadata?.dynamics?.currentPriority ?? 0.5, 0, 1);
-        // Compute activation, then clamp final result to [0, 2] (max is 1.0 × 2.0 with +0.5 self boost)
-        const activation = clamp(semanticScore * (1.0 + typeBoost) * priority, 0, 2);
-
-        return {
-          id: result.id,
-          activation,
-          memoryType,
-          priority,
-        };
-      })
-      .sort((a, b) => b.activation - a.activation)
-      .slice(0, 8); // Keep top 8 seeds for activation expansion
-  }
-
   private extractTopLevelField<T>(
     newMemory: MemoryToUpsert,
     field: string,
     predicate: (value: unknown) => value is T
   ): T | undefined {
-    const rawValue = (newMemory as unknown as Record<string, unknown>)[field];
+    const rawValue = (newMemory as Record<string, unknown>)[field];
     return predicate(rawValue) ? rawValue : undefined;
   }
 

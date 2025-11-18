@@ -4,11 +4,6 @@ import {
   MemoryMetadata,
   SearchResult,
   SearchDiagnostics,
-  TypeDistributionReport,
-  TopBeliefsReport,
-  EmotionMapReport,
-  RelationshipGraphReport,
-  PriorityHealthReport,
 } from './types.js';
 
 /**
@@ -536,146 +531,66 @@ export interface IMemoryRepository {
   >;
 
   /**
-   * Get memory type distribution report for character introspection.
+   * Increment the sleepCycles counter on specified memories.
    *
-   * Analyzes the composition of memories by type, including counts and
-   * average priorities for each memory type category.
+   * Updates the `sleepCycles` field in memory metadata to track refinement passes.
+   * Used during reconsolidation to mark memories that were processed and evolved.
    *
-   * @param indexName - Index to analyze
-   * @returns Report with total memory count and per-type statistics
+   * @param indexName - Index containing the memories
+   * @param ids - Memory IDs to update
+   * @param amount - Number of cycles to increment by (default: 1)
+   * @returns Number of memories successfully updated
    *
    * @remarks
-   * - Includes all memories regardless of priority
-   * - Percentages sum to 100%
-   * - Average priorities are computed from current_priority values
+   * - Non-existent IDs are silently ignored
+   * - Only the `sleepCycles` field is modified; other fields remain unchanged
+   * - Returns actual count of memories updated (may be less than requested if some IDs don't exist)
    *
    * @example
    * ```typescript
-   * const distribution = await repo.getTypeDistribution('character-memories');
-   * console.log(`Self memories: ${distribution.distribution.self.count}`);
-   * console.log(`Beliefs: ${distribution.distribution.belief.count}`);
+   * // Increment sleep cycles for memories involved in reconsolidation
+   * const updated = await repo.incrementSleepCycles('chat-history', [
+   *   'memory-1',
+   *   'memory-2',
+   *   'memory-3'
+   * ]);
+   * console.log(`Updated ${updated} memories`);
    * ```
    */
-  getTypeDistribution(indexName: string): Promise<TypeDistributionReport>;
+  incrementSleepCycles(indexName: string, ids: string[], amount?: number): Promise<number>;
 
   /**
-   * Get top memories by priority for character introspection.
+   * Mark memories as superseded by other memories.
    *
-   * Returns high-priority memories (typically beliefs and patterns) ranked
-   * by current priority, with optional filtering by type and minimum priority.
+   * Sets the `supersededById` field on source memories to indicate they are
+   * superseded by a replacement memory. Used during reconsolidation when a
+   * synthesized memory replaces or consolidates older memories.
    *
-   * @param indexName - Index to query
-   * @param options - Query options (type filter, minPriority, limit)
-   * @returns List of top memories ordered by priority descending
+   * @param indexName - Index containing the memories
+   * @param pairs - Array of (sourceId, supersededById) pairs where supersededById can be:
+   *   - A string memory ID (must exist in the same index)
+   *   - A number referencing an index in a derivedMemories array (only used internally by executor)
+   * @returns Number of memories successfully updated
    *
    * @remarks
-   * - Results include full metadata and relationship counts
-   * - Default limit is 20; max recommended is 100
-   * - Optionally filters by memory type (e.g., 'belief', 'pattern')
+   * - Non-existent source IDs are silently ignored
+   * - Only the `supersededById` field is modified; other fields remain unchanged
+   * - Multiple source memories can be superseded by the same derived memory
+   * - Returns actual count of memories updated (may be less than requested if some IDs don't exist)
    *
    * @example
    * ```typescript
-   * const topBeliefs = await repo.getTopMemoriesByPriority('alice', {
-   *   type: 'belief',
-   *   minPriority: 0.6,
-   *   limit: 10
-   * });
+   * // Mark old memories as superseded by a new derived summary
+   * const updated = await repo.markMemoriesSuperseded('chat-history', [
+   *   { sourceId: 'episode-1', supersededById: 'summary-1' },
+   *   { sourceId: 'episode-2', supersededById: 'summary-1' },
+   *   { sourceId: 'episode-3', supersededById: 'summary-1' }
+   * ]);
+   * console.log(`Marked ${updated} memories as superseded`);
    * ```
    */
-  getTopMemoriesByPriority(
+  markMemoriesSuperseded(
     indexName: string,
-    options?: {
-      type?: string;
-      minPriority?: number;
-      limit?: number;
-    }
-  ): Promise<TopBeliefsReport>;
-
-  /**
-   * Get emotional memory analysis for character introspection.
-   *
-   * Analyzes memories with emotional metadata, grouping by emotion label
-   * and computing intensity/priority statistics.
-   *
-   * @param indexName - Index to analyze
-   * @param options - Filter options (minIntensity, emotionLabel, limit)
-   * @returns Report with emotional memory counts and breakdowns by label
-   *
-   * @remarks
-   * - Includes only memories with emotion metadata (intensity >= 0.0)
-   * - Groups by emotion.label when present
-   * - minIntensity filters to emotionally significant memories (default: 0.5)
-   *
-   * @example
-   * ```typescript
-   * const emotionMap = await repo.getEmotionalMemories('alice', {
-   *   minIntensity: 0.6,
-   *   emotionLabel: 'pride'
-   * });
-   * ```
-   */
-  getEmotionalMemories(
-    indexName: string,
-    options?: {
-      minIntensity?: number;
-      emotionLabel?: string;
-      limit?: number;
-    }
-  ): Promise<EmotionMapReport>;
-
-  /**
-   * Get relationship graph export for character introspection.
-   *
-   * Exports memories and their relationships as a graph structure
-   * (nodes and edges) for visualization or analysis.
-   *
-   * @param indexName - Index to export
-   * @param options - Graph options (types to include, minPriority, limits)
-   * @returns Graph with nodes (memories) and edges (relationships)
-   *
-   * @remarks
-   * - Nodes are limited to prevent huge payloads (default max 100 nodes, 200 edges)
-   * - Can filter by relationship types (e.g., 'supports', 'contradicts')
-   * - Higher priority memories are included first
-   *
-   * @example
-   * ```typescript
-   * const graph = await repo.getRelationshipGraph('alice', {
-   *   minPriority: 0.5,
-   *   includeRelationshipTypes: ['supports', 'contradicts']
-   * });
-   * ```
-   */
-  getRelationshipGraph(
-    indexName: string,
-    options?: {
-      minPriority?: number;
-      includeRelationshipTypes?: string[];
-      maxNodes?: number;
-      maxEdges?: number;
-    }
-  ): Promise<RelationshipGraphReport>;
-
-  /**
-   * Get priority health report for character introspection.
-   *
-   * Analyzes the health of the memory system by computing priority
-   * distribution, identifying decaying memories, and providing recommendations.
-   *
-   * @param indexName - Index to analyze
-   * @returns Health report with priority distribution and recommendations
-   *
-   * @remarks
-   * - High: > 0.7, Medium: 0.3-0.7, Low: < 0.3
-   * - Decaying memories: not accessed in 60+ days AND priority < 0.2
-   * - Recommendations include cleanup suggestions based on distribution
-   *
-   * @example
-   * ```typescript
-   * const health = await repo.getPriorityHealth('alice');
-   * console.log(`High priority: ${health.highPriority.percentage}%`);
-   * console.log(`Recommendations: ${health.recommendations.join(', ')}`);
-   * ```
-   */
-  getPriorityHealth(indexName: string): Promise<PriorityHealthReport>;
+    pairs: Array<{ sourceId: string; supersededById: string | number }>
+  ): Promise<number>;
 }
