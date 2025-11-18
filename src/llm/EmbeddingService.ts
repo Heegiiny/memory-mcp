@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import type { EmbeddingCreateParams } from 'openai/resources/embeddings';
 import { debugLog } from '../utils/logger.js';
 
 /**

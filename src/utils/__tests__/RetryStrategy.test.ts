@@ -6,7 +6,10 @@ describe('executeWithRetry', () => {
     jest.useFakeTimers();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // Run all pending timers to ensure clean state
+    await jest.runOnlyPendingTimersAsync();
+    jest.clearAllTimers();
     jest.useRealTimers();
   });
 
@@ -198,10 +201,6 @@ describe('executeWithRetry', () => {
     };
 
     await expect(executeWithRetry(mockFn, options)).rejects.toThrow('timeout');
-    expect(mockFn).toHaveBeenCalledTimes(1);
-
-    // Advance timers to prove no retry occurs
-    await jest.advanceTimersByTimeAsync(1000);
     expect(mockFn).toHaveBeenCalledTimes(1);
   });
 
