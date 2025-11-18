@@ -5,7 +5,7 @@ import type {
   ResponseInput,
   ResponseInputItem,
 } from 'openai/resources/responses/responses';
-import { debugLog } from '../utils/logger.js';
+import { debugLog, startTimer, logError } from '../utils/logger.js';
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
@@ -31,11 +31,18 @@ export interface ToolCall {
   arguments: string; // JSON string
 }
 
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+}
+
 export interface LLMResponse {
   responseId: string;
   content: string | null;
   toolCalls?: ToolCall[];
   finishReason: string;
+  tokenUsage?: TokenUsage;
 }
 
 /**
@@ -174,6 +181,8 @@ export class LLMClient {
       ...(options.previousResponseId && { previous_response_id: options.previousResponseId }),
     };
 
+    const timer = startTimer('llm-client', 'chat-with-tools', 'info');
+
     try {
       debugLog('operation', 'LLM request', {
         model,
@@ -183,6 +192,30 @@ export class LLMClient {
 
       const response = await this.openai.responses.create(requestBody);
       const parsed = this.extractResponseContent(response);
+
+      // Extract token usage if available
+      const tokenUsage: TokenUsage | undefined = response.usage
+        ? {
+            inputTokens: response.usage.input_tokens || 0,
+            outputTokens: response.usage.output_tokens || 0,
+            totalTokens: response.usage.total_tokens || 0,
+          }
+        : undefined;
+
+      timer.end({
+        meta: {
+          model,
+          finishReason: response.incomplete_details?.reason ?? response.status ?? 'completed',
+          toolCallCount: parsed.toolCalls?.length || 0,
+          hasContent: !!parsed.content,
+          status: 'success',
+          ...(tokenUsage && {
+            inputTokens: tokenUsage.inputTokens,
+            outputTokens: tokenUsage.outputTokens,
+            totalTokens: tokenUsage.totalTokens,
+          }),
+        },
+      });
 
       debugLog('operation', 'LLM response', {
         finishReason: response.incomplete_details?.reason ?? response.status ?? 'completed',
@@ -195,10 +228,25 @@ export class LLMClient {
         content: parsed.content,
         toolCalls: parsed.toolCalls,
         finishReason: response.incomplete_details?.reason ?? response.status ?? 'completed',
+        tokenUsage,
       };
     } catch (error) {
-      console.error('LLM API error:', error);
-      throw new Error(`LLM request failed: ${(error as Error).message}`);
+      timer.end({
+        meta: {
+          model,
+          status: 'error',
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+
+      const err = error as Error;
+      logError('llm-client', 'chat-with-tools:error', {
+        message: 'LLM API request failed',
+        error: err,
+        meta: { model },
+      });
+
+      throw new Error(`LLM request failed: ${err.message}`);
     }
   }
 
@@ -230,6 +278,8 @@ export class LLMClient {
       ...(options.maxTokens && { max_output_tokens: options.maxTokens }),
     };
 
+    const timer = startTimer('llm-client', 'simple-chat', 'info');
+
     try {
       debugLog('operation', 'LLM request (simple chat)', {
         model,
@@ -239,6 +289,29 @@ export class LLMClient {
 
       const response = await this.openai.responses.create(requestBody);
 
+      // Extract token usage if available
+      const tokenUsage: TokenUsage | undefined = response.usage
+        ? {
+            inputTokens: response.usage.input_tokens || 0,
+            outputTokens: response.usage.output_tokens || 0,
+            totalTokens: response.usage.total_tokens || 0,
+          }
+        : undefined;
+
+      timer.end({
+        meta: {
+          model,
+          finishReason: response.incomplete_details?.reason ?? response.status ?? 'completed',
+          hasContent: !!response.output_text,
+          status: 'success',
+          ...(tokenUsage && {
+            inputTokens: tokenUsage.inputTokens,
+            outputTokens: tokenUsage.outputTokens,
+            totalTokens: tokenUsage.totalTokens,
+          }),
+        },
+      });
+
       debugLog('operation', 'LLM response (simple chat)', {
         finishReason: response.incomplete_details?.reason ?? response.status ?? 'completed',
         hasContent: !!response.output_text,
@@ -246,12 +319,22 @@ export class LLMClient {
 
       return response.output_text || '';
     } catch (error) {
-      debugLog('operation', 'LLM request failed (simple chat)', {
-        model,
-        error: (error as Error).message,
+      timer.end({
+        meta: {
+          model,
+          status: 'error',
+          error: error instanceof Error ? error.message : String(error),
+        },
       });
-      console.error('LLM API error:', error);
-      throw new Error(`LLM request failed: ${(error as Error).message}`);
+
+      const err = error as Error;
+      logError('llm-client', 'simple-chat:error', {
+        message: 'LLM API request failed',
+        error: err,
+        meta: { model },
+      });
+
+      throw new Error(`LLM request failed: ${err.message}`);
     }
   }
 
