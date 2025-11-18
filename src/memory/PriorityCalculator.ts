@@ -74,12 +74,21 @@ export function getRecencyScore(
   now: Date
 ): number {
   const dynamics = (memory as any).metadata?.dynamics;
-  // Use lastAccessedAt if available (memory was recalled), otherwise use creation timestamp
-  const referenceTimestamp = dynamics?.lastAccessedAt ?? memory.content.timestamp;
-  const referenceMs = new Date(referenceTimestamp).getTime();
   const nowMs = now.getTime();
 
-  // Guard against invalid timestamps (NaN, Infinity)
+  // Try lastAccessedAt first, fall back to content.timestamp if invalid
+  let referenceMs: number;
+  if (dynamics?.lastAccessedAt) {
+    referenceMs = new Date(dynamics.lastAccessedAt).getTime();
+    if (!Number.isFinite(referenceMs)) {
+      // lastAccessedAt is invalid, fall back to content.timestamp
+      referenceMs = new Date(memory.content.timestamp).getTime();
+    }
+  } else {
+    referenceMs = new Date(memory.content.timestamp).getTime();
+  }
+
+  // Guard against invalid timestamps
   if (!Number.isFinite(referenceMs) || !Number.isFinite(nowMs)) {
     return 0;
   }
