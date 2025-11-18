@@ -953,6 +953,9 @@ Any PostgreSQL 14+ provider with pgvector support will work:
 
 ## Additional Documentation
 
+- **[docs/CHARACTER_MEMORY.md](docs/CHARACTER_MEMORY.md)** - Design principles for AI characters and imperfect memory behavior
+- **[docs/SIMULATED_BRAIN.md](docs/SIMULATED_BRAIN.md)** - How the memory system simulates human-like cognition with decay, consolidation, and spreading activation
+- **[docs/BACKDATING_GUIDE.md](docs/BACKDATING_GUIDE.md)** - Comprehensive guide for historical memory ingestion with priority decay calculations and practical examples
 - **[migrations/20250117000001_init_postgres_schema.sql](migrations/20250117000001_init_postgres_schema.sql)** - Database schema and migration
 - **[scripts/setup-postgres.sh](scripts/setup-postgres.sh)** - Automated setup script
 - **[CLAUDE.md](CLAUDE.md)** - Developer guidance for working with this codebase
