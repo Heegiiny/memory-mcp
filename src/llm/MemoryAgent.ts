@@ -403,6 +403,10 @@ export class MemoryAgent {
         prefetchedResults = mergedResults;
       }
 
+      // Compute activation seeds for spreading activation if we have prefetched results
+      const activationSeeds =
+        prefetchedResults.length > 0 ? this.computeActivationSeeds(prefetchedResults) : [];
+
       const userMessage = JSON.stringify({
         query: args.query,
         index,
@@ -410,6 +414,7 @@ export class MemoryAgent {
         baseFilterExpression, // Pre-converted from structured filters
         responseMode: args.responseMode || 'answer',
         prefetchedResults, // Prefetched results from query expansion (empty if disabled)
+        activationSeeds, // Computed activation seeds for spreading activation guidance
       });
 
       const responseText = await this.toolRuntime.runToolLoop(systemPrompt, userMessage, context);
@@ -1714,12 +1719,61 @@ export class MemoryAgent {
     }
   }
 
+  /**
+   * Compute activation seeds for spreading activation from search results.
+   * Each seed gets an activation score based on semantic match, memory type, and priority.
+   *
+   * Formula: activation = semanticScore × (1.0 + typeBoost) × priorityMultiplier
+   * Type boosts: self=+0.5, belief=+0.2, pattern=+0.2, episodic/semantic=0.0
+   * Priority multiplier uses metadata.dynamics.currentPriority (0.0-1.0), defaults to 0.5
+   */
+  private computeActivationSeeds(
+    results: SearchResult[]
+  ): Array<{ id: string; activation: number; memoryType?: string; priority?: number }> {
+    const clamp = (value: number, min: number, max: number): number =>
+      Math.max(min, Math.min(max, value));
+
+    const getTypeBoost = (memoryType?: string): number => {
+      switch (memoryType) {
+        case 'self':
+          return 0.5;
+        case 'belief':
+          return 0.2;
+        case 'pattern':
+          return 0.2;
+        default:
+          return 0.0;
+      }
+    };
+
+    return results
+      .map((result) => {
+        // Clamp semantic score to [0, 1] to prevent abuse
+        const semanticScore = clamp(result.score ?? 0.5, 0, 1);
+        const memoryType = result.metadata?.memoryType;
+        const typeBoost = getTypeBoost(memoryType);
+        // Clamp priority to [0, 1] to ensure bounded weighting
+        const priority = clamp(result.metadata?.dynamics?.currentPriority ?? 0.5, 0, 1);
+        // Compute activation, then clamp final result to [0, 2] (max is 1.0 × 2.0 with +0.5 self boost)
+        const activation = clamp(semanticScore * (1.0 + typeBoost) * priority, 0, 2);
+
+        return {
+          id: result.id,
+          activation,
+          memoryType,
+          priority,
+        };
+      })
+      .sort((a, b) => b.activation - a.activation)
+      .slice(0, 8); // Keep top 8 seeds for activation expansion
+  }
+
   private extractTopLevelField<T>(
     newMemory: MemoryToUpsert,
     field: string,
     predicate: (value: unknown) => value is T
   ): T | undefined {
-    const rawValue = (newMemory as Record<string, unknown>)[field];
+    const rawValue = (newMemory as unknown as Record<string, unknown>)[field];
     return predicate(rawValue) ? rawValue : undefined;
   }
 
