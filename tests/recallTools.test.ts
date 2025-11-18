@@ -246,7 +246,7 @@ describe('Recall Tools Integration Tests', () => {
 
       // Get the query embedding using the same fake embedding service
       const queryText = 'pgvector similarity testing';
-      const queryVector = await fakeEmbeddingService.generateEmbedding(queryText);
+      const queryVector = await fakeEmbeddingService.embedText(queryText);
 
       // Query the memory
       fakeRecallLLMClient.reset();
