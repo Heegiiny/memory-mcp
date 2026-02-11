@@ -41,6 +41,7 @@ function getEnvInt(name: string, fallback: number): number {
 export function createMemoryServer(config?: {
   databaseUrl?: string;
   openaiApiKey?: string;
+  openaiBaseUrl?: string;
   defaultIndex?: string;
   projectRoot?: string;
 }): Server {
@@ -79,6 +80,8 @@ export function createMemoryServer(config?: {
     },
   });
   const openaiApiKey = config?.openaiApiKey || process.env.OPENAI_API_KEY;
+  const openaiBaseUrl =
+    config?.openaiBaseUrl || process.env.OPENAI_API_BASE || process.env.OPENAI_BASE_URL;
   const defaultIndex = config?.defaultIndex || process.env.MEMORY_DEFAULT_INDEX;
   const projectRoot = config?.projectRoot || process.cwd();
 
@@ -86,22 +89,26 @@ export function createMemoryServer(config?: {
     throw new Error('No Postgres database URL configured. Set DATABASE_URL environment variable.');
   }
 
-  if (!openaiApiKey) {
-    throw new Error('OPENAI_API_KEY is required.');
+  if (!openaiApiKey && !openaiBaseUrl) {
+    throw new Error(
+      'OPENAI_API_KEY is required (or set OPENAI_API_BASE for local models, then OPENAI_API_KEY=ollama).'
+    );
   }
+  const apiKey = openaiApiKey || (openaiBaseUrl ? 'ollama' : '');
 
   const indexResolver = new IndexResolver(defaultIndex);
   const maxFileBytes = getEnvInt('MEMORY_MAX_FILE_BYTES', 2 * 1024 * 1024);
   const fileLoader = new ProjectFileLoader(projectRoot, maxFileBytes);
   const promptsDir = resolve(projectRoot, 'prompts');
   const promptManager = new PromptManager(promptsDir);
-  const llmClient = new LLMClient(openaiApiKey);
+  const llmClient = new LLMClient(apiKey, undefined, undefined, openaiBaseUrl);
 
   const embeddingConfig = loadEmbeddingConfig();
   const embeddingService = new EmbeddingService(
-    openaiApiKey,
+    apiKey,
     embeddingConfig.model,
-    embeddingConfig.dimensions
+    embeddingConfig.dimensions,
+    openaiBaseUrl
   );
 
   const repository = new MemoryRepositoryPostgres(databaseUrl, backend.projectId, embeddingService);
@@ -151,7 +158,8 @@ export function createMemoryServer(config?: {
             properties: {
               input: {
                 type: 'string',
-                description: 'Natural language instruction describing what to memorize.',
+                description:
+                  'Natural language instruction describing what to memorize. For reliable storage of user requests, prefix with "Remember: " or "Memorize: " followed by the fact (e.g. "Remember: User prefers dark mode").',
               },
               files: {
                 type: 'array',

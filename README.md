@@ -1,43 +1,182 @@
-# Memory MCP Server
+# Memory MCP Server (Modified Fork)
 
-A Model Context Protocol (MCP) server that provides semantic memory storage and retrieval using PostgreSQL with pgvector for vector similarity search. This is an **agentic memory system** where an LLM orchestrates memory operations through natural language instructions.
+> **Модифицированный форк** — адаптация для локального стека Ollama (Qwen3 8B + BGE-M3). Оригинал: [modelcontextprotocol/memory-mcp](https://github.com/modelcontextprotocol/memory-mcp)
+
+Model Context Protocol (MCP) сервер семантической памяти на PostgreSQL + pgvector. LLM‑агент управляет операциями через natural language. **Эта версия** рассчитана на развёртывание на соседнем ПК с Ollama и общим PostgreSQL.
 
 ## Overview
 
-The Memory MCP server enables AI assistants to store, search, and manage persistent memories with semantic understanding. Unlike traditional databases that require structured queries, this system accepts natural language instructions and uses an LLM agent to translate them into memory operations.
+Сервер позволяет ИИ‑ассистентам хранить, искать и управлять долговременной памятью. Использует векторный поиск (pgvector) и LLM для интерпретации запросов.
 
 ### Key Features
 
-- **Agentic Architecture**: LLM-orchestrated memory operations using GPT-4/5 with internal tools
-- **Semantic Search**: PostgreSQL + pgvector for fast similarity queries with hybrid search (vector + keyword)
-- **Dynamic Priority**: Memories have priority scores that decay over time and boost with access
-- **Multi-Project Isolation**: Each project has its own isolated PostgreSQL database
-- **Rich Metadata**: Automatic extraction of topics, tags, and semantic memory types
-- **Memory Lifecycle**: Automated consolidation, deduplication, and cleanup via refinement operations
-- **Multi-Index Organization**: Organize memories into logical namespaces (personal, work, research, etc.)
+- **Локальный стек**: Ollama (LLM), BGE-M3 (эмбеддинги), PostgreSQL + pgvector (хранилище)
+- **Agentic Architecture**: LLM управляет операциями через внутренние инструменты
+- **Semantic Search**: гибридный поиск (вектор + keyword)
+- **Dynamic Priority**: приоритеты памяти decay/boost по использованию
+- **Rich Metadata**: топики, теги, типы памяти (self, belief, episodic и др.)
+- **Memory Lifecycle**: consolidation, deduplication, refinement
 
-## Quick Start
+## Развёртывание на соседнем компьютере
 
-Get the Memory MCP server running in 5 minutes:
+Ниже — пошаговая инструкция, чтобы развернуть **точно такой же** сервер на другом ПК и подключить Claude + Cursor.
+
+### Требования
+
+| Компонент      | Где                 | Пример                     |
+| -------------- | ------------------- | -------------------------- |
+| PostgreSQL 14+ | Локально/сеть       | `192.168.1.45:5432`        |
+| pgvector       | В Postgres          | `CREATE EXTENSION vector;` |
+| Ollama         | Локально/сеть       | `192.168.1.80:11434`       |
+| Node.js 18+    | Где запускается MCP | Обычно локально            |
+
+### 1. Клонировать и установить зависимости
 
 ```bash
-# 1. Clone and install dependencies
-git clone <repository-url>
+git clone <URL-вашего-форка>
 cd memory-mcp
 npm install
+npm run build
+```
 
-# 2. Set up PostgreSQL database (automated)
-./scripts/setup-postgres.sh
+### 2. PostgreSQL (локально или на соседнем ПК)
 
-# 3. Configure environment
-cp .env.example .env
-# Edit .env and set your OPENAI_API_KEY
+Создать БД и включить pgvector — затем в шаге 3 запустить `reset-and-migrate`.
 
-# 4. Start the server
+**PostgreSQL на другом ПК** (например `192.168.1.45`):
+
+```bash
+# На сервере с PostgreSQL
+psql -U postgres -c "CREATE DATABASE mcp_memory;"
+psql -U postgres -d mcp_memory -c "CREATE EXTENSION IF NOT EXISTS vector;"
+```
+
+**PostgreSQL локально**:
+
+```bash
+# Linux/macOS
+createdb mcp_memory
+psql -d mcp_memory -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
+# Или: ./scripts/setup-postgres.sh (создаст memory_default — тогда в DATABASE_URL укажите memory_default)
+```
+
+### 3. Миграция под BGE-M3 (1024 измерения)
+
+`reset-and-migrate.ts` уже включает миграцию на 1024 измерения. Запуск:
+
+```powershell
+# PowerShell
+$env:DATABASE_URL="postgresql://user:pass@host:5432/mcp_memory"
+npx tsx scripts/reset-and-migrate.ts
+```
+
+```bash
+# Bash
+DATABASE_URL=postgresql://user:pass@host:5432/mcp_memory npx tsx scripts/reset-and-migrate.ts
+```
+
+**Внимание**: все данные в таблицах памяти будут удалены.
+
+### 4. Конфигурация (.env)
+
+```env
+# PostgreSQL (соседний ПК или localhost)
+DATABASE_URL=postgresql://mcp_user:password@192.168.1.45:5432/mcp_memory
+
+# Ollama (соседний ПК или localhost)
+OPENAI_API_BASE=http://192.168.1.80:11434/v1
+OPENAI_API_KEY=ollama
+
+# LLM
+MEMORY_MODEL=qwen3:8b
+MEMORY_ANALYSIS_MODEL=qwen3:8b
+
+# Эмбеддинги BGE-M3
+MEMORY_EMBEDDING_MODEL=bge-m3
+MEMORY_EMBEDDING_DIMENSIONS=1024
+```
+
+Перед первым запуском: `ollama pull qwen3:8b` и `ollama pull bge-m3` на машине с Ollama.
+
+### 5. Проверка
+
+```bash
 npm run dev
 ```
 
-The server will start and listen for MCP tool calls via STDIO. See [Configuration](#configuration) for detailed setup and [Usage](#usage) for how to call the MCP tools.
+Сервер должен запуститься и слушать STDIO. Тест: `npm run health`.
+
+### 6. Подключение Claude Desktop
+
+Файл конфигурации:
+
+- **Windows**: `C:\Users\<ИМЯ>\AppData\Roaming\Claude\claude_desktop_config.json`
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+
+Добавить в `mcpServers`:
+
+```json
+{
+  "mcpServers": {
+    "memory-mcp": {
+      "command": "cmd.exe",
+      "args": ["/c", "cd /d C:\\path\\to\\memory-mcp && npx tsx src/index.ts"],
+      "env": {
+        "DATABASE_URL": "postgresql://mcp_user:password@192.168.1.45:5432/mcp_memory",
+        "OPENAI_API_BASE": "http://192.168.1.80:11434/v1",
+        "OPENAI_API_KEY": "ollama",
+        "MEMORY_EMBEDDING_MODEL": "bge-m3",
+        "MEMORY_EMBEDDING_DIMENSIONS": "1024",
+        "MEMORY_MODEL": "qwen3:8b",
+        "MEMORY_ANALYSIS_MODEL": "qwen3:8b"
+      }
+    }
+  }
+}
+```
+
+**Важно**: замените `C:\\path\\to\\memory-mcp` на фактический путь к папке проекта. После правок перезапустите Claude Desktop.
+
+### 7. Подключение Cursor
+
+Файл конфигурации:
+
+- **Windows**: `C:\Users\<ИМЯ>\.cursor\mcp.json`
+
+```json
+{
+  "mcpServers": {
+    "memory-mcp": {
+      "command": "cmd.exe",
+      "args": ["/c", "cd /d C:\\path\\to\\memory-mcp && npx tsx src/index.ts"],
+      "env": {
+        "DATABASE_URL": "postgresql://mcp_user:password@192.168.1.45:5432/mcp_memory",
+        "OPENAI_API_BASE": "http://192.168.1.80:11434/v1",
+        "OPENAI_API_KEY": "ollama",
+        "MEMORY_EMBEDDING_MODEL": "bge-m3",
+        "MEMORY_EMBEDDING_DIMENSIONS": "1024",
+        "MEMORY_MODEL": "qwen3:8b",
+        "MEMORY_ANALYSIS_MODEL": "qwen3:8b"
+      }
+    }
+  }
+}
+```
+
+Перезапустите Cursor после изменений.
+
+### Альтернатива: production build
+
+```bash
+npm run build
+```
+
+И в конфиге вместо `npx tsx src/index.ts` укажите:
+
+```
+"args": ["/c", "cd /d C:\\path\\to\\memory-mcp && node dist/index.js"]
+```
 
 ## Architecture
 
@@ -84,258 +223,59 @@ The Memory MCP server uses a layered architecture:
 
 ## Prerequisites
 
-- **PostgreSQL 14+** - Database server with vector extension support
-- **pgvector** - PostgreSQL extension for vector similarity search
-- **Node.js 18+** - Runtime environment
-- **OpenAI API Key** - For generating embeddings and LLM orchestration
-
-## Installation
-
-### Automated Setup (Recommended)
-
-Run the setup script to automatically create the database, enable pgvector, and run migrations:
-
-```bash
-./scripts/setup-postgres.sh
-```
-
-The script will:
-
-- Check if PostgreSQL is installed and running
-- Create the `memory_default` database
-- Enable the pgvector extension
-- Run schema migrations
-- Verify the setup
-
-### Manual Setup
-
-If you prefer to set up manually, follow these steps:
-
-#### 1. Install PostgreSQL with pgvector
-
-**macOS (Homebrew)**
-
-```bash
-# Install PostgreSQL 14 or later
-brew install postgresql@16
-
-# Start PostgreSQL service
-brew services start postgresql@16
-
-# Install pgvector
-brew install pgvector
-```
-
-**Linux (Ubuntu/Debian)**
-
-```bash
-# Install PostgreSQL
-sudo apt update
-sudo apt install postgresql postgresql-contrib
-
-# Install build tools for pgvector
-sudo apt install build-essential postgresql-server-dev-all
-
-# Install pgvector from source
-git clone https://github.com/pgvector/pgvector.git
-cd pgvector
-make
-sudo make install
-```
-
-**Docker**
-
-```bash
-# Use the official pgvector image
-docker run -d \
-  --name postgres-memory \
-  -e POSTGRES_DB=memory_default \
-  -e POSTGRES_PASSWORD=postgres \
-  -p 5432:5432 \
-  ankane/pgvector:latest
-
-# Enable pgvector extension
-docker exec -it postgres-memory psql -U postgres -d memory_default -c "CREATE EXTENSION IF NOT EXISTS vector;"
-
-# Run migrations
-docker exec -i postgres-memory psql -U postgres -d memory_default < migrations/20250117000001_init_postgres_schema.sql
-```
-
-#### 2. Create Database
-
-```bash
-# Create the memory_default database
-createdb memory_default
-
-# Or using psql
-psql -U postgres -c "CREATE DATABASE memory_default;"
-```
-
-#### 3. Enable pgvector Extension
-
-```bash
-# Connect to the database and enable the extension
-psql -d memory_default -c "CREATE EXTENSION IF NOT EXISTS vector;"
-```
-
-#### 4. Run Migrations
-
-```bash
-# Run the schema migration
-psql -d memory_default -f migrations/20250117000001_init_postgres_schema.sql
-
-# Optional: Load test data for quick testing
-psql -d memory_default -f migrations/seeds/01_test_data.sql
-```
-
-#### 5. Verify Installation
-
-Run these commands to verify your setup:
-
-```bash
-# Verify memory_default database exists
-psql -U postgres -c "SELECT datname FROM pg_database WHERE datname = 'memory_default';"
-
-# Check PostgreSQL version
-psql -d memory_default -c "SELECT version();"
-
-# Verify pgvector extension is enabled
-psql -d memory_default -c "SELECT * FROM pg_extension WHERE extname = 'vector';"
-
-# Check that tables were created
-psql -d memory_default -c "\dt"
-```
-
-Expected output should show:
-
-- Database `memory_default` exists
-- PostgreSQL version 14+
-- pgvector extension in the extensions list
-- Tables: `memories`, `memory_indexes`, `memory_relationships`, `memory_usage_log`
+- **PostgreSQL 14+** — с поддержкой pgvector
+- **pgvector** — `CREATE EXTENSION vector;`
+- **Node.js 18+**
+- **Ollama** — для LLM и эмбеддингов (локально или на соседнем ПК)
 
 ## Configuration
 
-### 1. Environment Variables
+Сервер читает настройки из переменных окружения (через `.env` или `env` в конфиге MCP).
 
-Copy the example environment file and configure your settings:
-
-```bash
-# Copy the example file
-cp .env.example .env
-
-# Edit .env and set your configuration
-```
-
-**Required Environment Variables:**
+### Обязательные переменные
 
 ```env
-# Postgres project configuration
-MEMORY_POSTGRES_PROJECT_REGISTRY=./config/projects.json
-MEMORY_ACTIVE_PROJECT=local
+# PostgreSQL
+DATABASE_URL=postgresql://user:password@host:5432/database
 
-# OpenAI API key for embeddings and LLM orchestration
-OPENAI_API_KEY=sk-your-api-key-here
+# Ollama (заменить host на IP, если Ollama на другом ПК)
+OPENAI_API_BASE=http://192.168.1.80:11434/v1
+OPENAI_API_KEY=ollama
 
-# Embedding model (determines vector dimensions)
-MEMORY_EMBEDDING_MODEL=text-embedding-3-small
+# Эмбеддинги BGE-M3
+MEMORY_EMBEDDING_MODEL=bge-m3
+MEMORY_EMBEDDING_DIMENSIONS=1024
+
+# LLM
+MEMORY_MODEL=qwen3:8b
+MEMORY_ANALYSIS_MODEL=qwen3:8b
 ```
 
-**Optional Configuration:**
+### Дополнительные переменные
 
 ```env
-# Embedding dimensions (auto-detected from model, manual override available)
-MEMORY_EMBEDDING_DIMENSIONS=1536
-
-# Host/system context (inline text or file path)
+# Опционально
 MEMORY_MCP_SYSTEM_MESSAGE=./config/memory-host-context.txt
-
-# Debug flags
 MEMORY_DEBUG_MODE=true
-MEMORY_DEBUG_OPERATIONS=true
-MEMORY_DEBUG_VALIDATION=true
-MEMORY_DEBUG_ACCESS_TRACKING=true
-MEMORY_DEBUG_REPOSITORY=true
-
-# Observability and logging
-MEMORY_LOG_LEVEL=info          # Log level: debug, info, warn, error (default: info)
-MEMORY_LOG_FORMAT=pretty       # Log format: json, pretty (default: pretty)
-MEMORY_DB_SLOW_QUERY_MS=200   # Slow query threshold in milliseconds (default: 200)
-
-# Refinement tuning
-MEMORY_REFINE_DEFAULT_BUDGET=100
-MEMORY_REFINE_ALLOW_DELETE=false
 MEMORY_ACCESS_TRACKING_ENABLED=true
-MEMORY_ACCESS_TRACKING_TOP_N=3
-MEMORY_ACCESS_PRIORITY_BOOST=0.01
-
-# Query enhancement
 MEMORY_QUERY_EXPANSION_ENABLED=true
-MEMORY_QUERY_EXPANSION_COUNT=2
-
-# File ingestion limits
-MEMORY_LARGE_FILE_THRESHOLD_BYTES=262144
-MEMORY_CHUNK_CHAR_LENGTH=16000
-MEMORY_CHUNK_CHAR_OVERLAP=2000
-MEMORY_MAX_CHUNKS_PER_FILE=24
-MEMORY_MAX_MEMORIES_PER_FILE=50
+MEMORY_REFINE_DEFAULT_BUDGET=100
 ```
 
-### 2. Project Registry
+### Поддерживаемые модели эмбеддингов
 
-The server uses `config/projects.json` to map project IDs to database URLs:
+| Модель                   | Размерность | Примечание            |
+| ------------------------ | ----------- | --------------------- |
+| `text-embedding-3-small` | 1536        | OpenAI                |
+| `text-embedding-3-large` | 3072        | OpenAI                |
+| `bge-m3`                 | 1024        | Ollama, рекомендуется |
+| `nomic-embed-text`       | 768         | Ollama                |
 
-```json
-{
-  "local": {
-    "databaseUrl": "postgresql://postgres:postgres@localhost:5432/memory_default"
-  }
-}
-```
+**Важно**: размерность `embedding` в БД должна совпадать с моделью. Для BGE-M3 используйте миграцию `20250211000000_bge_m3_1024_vectors.sql` или `reset-and-migrate.ts`.
 
-The active project is selected via the `MEMORY_ACTIVE_PROJECT` environment variable. Each project has its own isolated PostgreSQL database.
+### Host Context (опционально)
 
-**Multi-Project Setup Example:**
-
-```json
-{
-  "local": {
-    "databaseUrl": "postgresql://postgres:postgres@localhost:5432/memory_default"
-  },
-  "production": {
-    "databaseUrl": "postgresql://user:pass@prod-host:5432/memory_prod"
-  },
-  "staging": {
-    "databaseUrl": "postgresql://user:pass@staging-host:5432/memory_staging"
-  }
-}
-```
-
-### 3. Embedding Models
-
-Supported models (configured via `MEMORY_EMBEDDING_MODEL`):
-
-- `text-embedding-3-small` - 1536 dimensions (default, recommended)
-- `text-embedding-3-large` - 3072 dimensions (higher quality, higher cost)
-
-**⚠️ Important**: The embedding model dimension must match your database schema. The default migration uses `vector(1536)` for `text-embedding-3-small`. If you change the embedding model, you must update the `embedding` column type in the migration to match the new dimension.
-
-### 4. Host and Project Context (Optional)
-
-The prompt system supports optional context injection:
-
-**Host Context** (`MEMORY_MCP_SYSTEM_MESSAGE`):
-
-- Tells the memory server what role it plays in the overall system
-- Guides what kinds of information should be stored or avoided
-- Can be inline text or a file path (e.g., `./config/memory-host-context.txt`)
-
-**Project Context** (`projectSystemMessagePath` in tool calls):
-
-- Per-request context for specific projects or use cases
-- Passed as a parameter to individual tool calls
-- Useful for biasing behavior on a per-operation basis
-
-See `prompts/README.md` for details on the composable prompt system.
+`MEMORY_MCP_SYSTEM_MESSAGE` — путь к файлу или inline-текст с контекстом для промптов. `projectSystemMessagePath` в вызовах инструментов — контекст на операцию. См. `prompts/README.md`.
 
 ## Development
 
@@ -745,14 +685,13 @@ cd pgvector && sudo make install
 **Solution**:
 
 ```bash
-# Check PostgreSQL is running
+# Проверить, что PostgreSQL запущен
 psql -U postgres -l
 
-# Verify connection string in config/projects.json
-# Check username, password, host, and port match your PostgreSQL setup
+# Проверить DATABASE_URL — пользователь, пароль, хост, порт, БД
 
-# Test connection manually
-psql "postgresql://postgres:postgres@localhost:5432/memory_default"
+# Тест подключения
+psql "postgresql://user:pass@host:5432/mcp_memory"
 ```
 
 ### Permission denied for CREATE EXTENSION
@@ -768,48 +707,30 @@ psql -U postgres -d memory_default -c "CREATE EXTENSION vector;"
 
 ### Embedding dimension mismatch
 
-**Error**: `Error: Embedding dimension mismatch`
+**Error**: `Embedding dimension mismatch: expected 1024, got 1536`
 
-**Cause**: The embedding model dimension doesn't match the database schema.
+**Причина**: БД с `vector(1536)`, а модель (bge-m3) выдаёт 1024.
 
-**Solution**:
-
-1. Check your configured model dimension:
-   - `text-embedding-3-small`: 1536 dimensions
-   - `text-embedding-3-large`: 3072 dimensions
-
-2. Update migration to match:
-
-```sql
--- For text-embedding-3-small (default)
-embedding vector(1536)
-
--- For text-embedding-3-large
-embedding vector(3072)
-```
-
-3. Re-run migrations after updating the dimension.
-
-### Missing OPENAI_API_KEY
-
-**Error**: `Error: OPENAI_API_KEY is required.`
-
-**Solution**:
+**Решение**:
 
 ```bash
-# Add your OpenAI API key to .env
-echo "OPENAI_API_KEY=sk-your-api-key-here" >> .env
+# Сброс схемы + миграции (данные удалятся)
+DATABASE_URL=postgresql://... npx tsx scripts/reset-and-migrate.ts
+psql "$DATABASE_URL" -f migrations/20250211000000_bge_m3_1024_vectors.sql
 ```
 
-### Invalid MEMORY_ACTIVE_PROJECT
+### Missing API key / base URL
 
-**Error**: `Error: No active project configured`
+**Error**: `OPENAI_API_KEY is required (or set OPENAI_API_BASE for local models, then OPENAI_API_KEY=ollama).`
 
 **Solution**:
 
-1. Verify `MEMORY_ACTIVE_PROJECT` in `.env` matches a key in `config/projects.json`
-2. Ensure `config/projects.json` exists and is valid JSON
-3. Check that the project's `databaseUrl` is accessible
+Для Ollama задайте оба параметра:
+
+```env
+OPENAI_API_BASE=http://localhost:11434/v1
+OPENAI_API_KEY=ollama
+```
 
 ### Memory index not found
 
@@ -823,18 +744,18 @@ echo "OPENAI_API_KEY=sk-your-api-key-here" >> .env
 
 ### Server won't start - relation 'memories' does not exist
 
-**Error**: `ERROR: relation "memories" does not exist` or `ERROR: relation "memory_indexes" does not exist`
+**Ошибка**: `relation "memories" does not exist` или `relation "memory_indexes" does not exist`
 
-**Cause**: Database migrations haven't been run.
+**Причина**: Миграции не выполнены.
 
-**Solution**:
+**Решение**:
 
 ```bash
-# Run the schema migration
-psql -d memory_default -f migrations/20250117000001_init_postgres_schema.sql
+# Вариант 1: Полный сброс + миграции (включая BGE-M3)
+DATABASE_URL=postgresql://... npx tsx scripts/reset-and-migrate.ts
 
-# Verify tables were created
-psql -d memory_default -c "\dt"
+# Вариант 2: Только миграции (если БД пустая)
+npm run migrate
 ```
 
 ### Server won't start - missing dependencies
@@ -851,33 +772,18 @@ npm install
 npm list @modelcontextprotocol/sdk
 ```
 
-### Claude Desktop can't connect to MCP server
+### Claude Desktop / Cursor не подключаются к MCP
 
-**Error**: `Cannot connect to server on stdio` or MCP server not responding
+**Ошибка**: `Cannot connect to server on stdio` или сервер не отвечает
 
-**Solution**:
+**Решение**:
 
-1. Verify the MCP server path in Claude Desktop config is correct
-2. Check that the server starts successfully: `npm run dev` (should show no errors)
-3. Verify your Claude Desktop MCP configuration (usually in `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
-
-```json
-{
-  "mcpServers": {
-    "memory": {
-      "command": "node",
-      "args": ["/absolute/path/to/memory-mcp/dist/index.js"],
-      "env": {
-        "OPENAI_API_KEY": "sk-...",
-        "MEMORY_ACTIVE_PROJECT": "local"
-      }
-    }
-  }
-}
-```
-
-4. For development, use `npm run build` to compile TypeScript, then point to `dist/index.js`
-5. Check Claude Desktop logs for more detailed error messages
+1. Запустите вручную: `cd memory-mcp && npx tsx src/index.ts` — ошибок быть не должно.
+2. Проверьте путь в конфиге (абсолютный, с правильными слэшами).
+3. **Claude** — `C:\Users\<ИМЯ>\AppData\Roaming\Claude\claude_desktop_config.json`
+4. **Cursor** — `C:\Users\<ИМЯ>\.cursor\mcp.json`
+5. Все переменные `env` (DATABASE_URL, OPENAI_API_BASE, MEMORY_EMBEDDING_MODEL и т.д.) должны быть заданы в конфиге MCP.
+6. Перезапустите Claude Desktop / Cursor после изменений.
 
 ### Development server errors
 

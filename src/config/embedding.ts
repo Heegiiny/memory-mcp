@@ -7,6 +7,8 @@ export const KNOWN_EMBEDDING_MODELS: Record<string, number> = {
   'text-embedding-3-small': 1536,
   'text-embedding-3-large': 3072,
   'text-embedding-ada-002': 1536,
+  'nomic-embed-text': 768, // Ollama: ollama pull nomic-embed-text
+  'bge-m3': 1024, // Ollama: ollama pull bge-m3
 };
 
 export function loadEmbeddingConfig(): EmbeddingConfig {

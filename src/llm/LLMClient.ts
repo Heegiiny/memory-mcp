@@ -53,11 +53,20 @@ export class LLMClient {
   private openai: OpenAI;
   private defaultModel: string;
   private defaultAnalysisModel: string;
+  private useChatCompletions: boolean; // Ollama and local models: use Chat Completions API for better tool calling
 
-  constructor(apiKey: string, defaultModel = 'gpt-5-mini', analysisModel = 'gpt-5-mini') {
-    this.openai = new OpenAI({ apiKey });
+  constructor(
+    apiKey: string,
+    defaultModel = 'gpt-5-mini',
+    analysisModel = 'gpt-5-mini',
+    baseURL?: string
+  ) {
+    const config: { apiKey: string; baseURL?: string } = { apiKey };
+    if (baseURL) config.baseURL = baseURL;
+    this.openai = new OpenAI(config);
     this.defaultModel = process.env.MEMORY_MODEL || defaultModel;
     this.defaultAnalysisModel = process.env.MEMORY_ANALYSIS_MODEL || analysisModel;
+    this.useChatCompletions = !!baseURL;
   }
 
   /**
@@ -114,6 +123,44 @@ export class LLMClient {
   }
 
   /**
+   * Convert to Chat Completions format (for Ollama / local models)
+   */
+  private toChatCompletionsTools(tools: ToolDef[]) {
+    return tools.map((tool) => ({
+      type: 'function' as const,
+      function: {
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters,
+      },
+    }));
+  }
+
+  private toChatCompletionsMessages(messages: ChatMessage[]): Array<Record<string, unknown>> {
+    const result: Array<Record<string, unknown>> = [];
+    for (const msg of messages) {
+      if (msg.role === 'tool') {
+        result.push({
+          role: 'tool',
+          tool_call_id: msg.tool_call_id,
+          content: msg.content ?? '',
+        });
+        continue;
+      }
+      const m: Record<string, unknown> = { role: msg.role, content: msg.content ?? '' };
+      if (msg.role === 'assistant' && msg.tool_calls?.length) {
+        m.tool_calls = msg.tool_calls.map((tc) => ({
+          id: tc.id,
+          type: 'function',
+          function: { name: tc.name, arguments: tc.arguments },
+        }));
+      }
+      result.push(m);
+    }
+    return result;
+  }
+
+  /**
    * Extract content and tool calls from Responses API output
    */
   private extractResponseContent(response: Response): {
@@ -139,6 +186,90 @@ export class LLMClient {
   }
 
   /**
+   * Chat Completions API path for Ollama / local models (better tool calling support)
+   */
+  private async chatWithToolsViaChatCompletions(
+    messages: ChatMessage[],
+    tools: ToolDef[],
+    options: {
+      model: string;
+      maxTokens?: number;
+      jsonMode?: boolean;
+    },
+    timer: ReturnType<typeof startTimer>
+  ): Promise<LLMResponse> {
+    const { model } = options;
+    const apiMessages = this.toChatCompletionsMessages(messages) as Parameters<
+      OpenAI['chat']['completions']['create']
+    >[0]['messages'];
+    const apiTools = tools.length ? this.toChatCompletionsTools(tools) : undefined;
+
+    try {
+      debugLog('operation', 'LLM request (chat completions)', {
+        model,
+        messageCount: messages.length,
+        toolCount: tools.length,
+      });
+
+      const response = await this.openai.chat.completions.create({
+        model,
+        messages: apiMessages,
+        tools: apiTools,
+        tool_choice: apiTools ? 'auto' : undefined,
+        max_tokens: options.maxTokens,
+        response_format: options.jsonMode ? { type: 'json_object' } : undefined,
+      });
+
+      const choice = response.choices?.[0];
+      const msg = choice?.message;
+      const toolCalls: ToolCall[] = (msg?.tool_calls ?? []).map((tc) => ({
+        id: tc.id,
+        name: tc.function.name,
+        arguments:
+          typeof tc.function.arguments === 'string'
+            ? tc.function.arguments
+            : JSON.stringify(tc.function.arguments ?? {}),
+      }));
+
+      const tokenUsage: TokenUsage | undefined = response.usage
+        ? {
+            inputTokens: response.usage.prompt_tokens || 0,
+            outputTokens: response.usage.completion_tokens || 0,
+            totalTokens: response.usage.total_tokens || 0,
+          }
+        : undefined;
+
+      timer.end({
+        meta: {
+          model,
+          finishReason: choice?.finish_reason ?? 'completed',
+          toolCallCount: toolCalls.length,
+          hasContent: !!msg?.content,
+          status: 'success',
+          ...(tokenUsage && {
+            inputTokens: tokenUsage.inputTokens,
+            outputTokens: tokenUsage.outputTokens,
+            totalTokens: tokenUsage.totalTokens,
+          }),
+        },
+      });
+
+      return {
+        responseId: response.id ?? '',
+        content: msg?.content ?? null,
+        toolCalls: toolCalls.length ? toolCalls : undefined,
+        finishReason: choice?.finish_reason ?? 'completed',
+        tokenUsage,
+      };
+    } catch (error) {
+      timer.end({
+        meta: { model, status: 'error', error: (error as Error).message },
+      });
+      throw new Error(`LLM request failed: ${(error as Error).message}`);
+    }
+  }
+
+  /**
    * Chat completion with tool calling support using Responses API
    */
   async chatWithTools(
@@ -154,6 +285,12 @@ export class LLMClient {
     } = {}
   ): Promise<LLMResponse> {
     const model = options.model ?? this.defaultModel;
+    const timer = startTimer('llm-client', 'chat-with-tools', 'info');
+
+    if (this.useChatCompletions) {
+      return this.chatWithToolsViaChatCompletions(messages, tools, { ...options, model }, timer);
+    }
+
     const reasoningEffort =
       options.reasoningEffort ??
       (process.env.MEMORY_MODEL_REASONING_EFFORT as
@@ -181,8 +318,6 @@ export class LLMClient {
       ...(options.previousResponseId && { previous_response_id: options.previousResponseId }),
     };
 
-    const timer = startTimer('llm-client', 'chat-with-tools', 'info');
-
     try {
       debugLog('operation', 'LLM request', {
         model,
@@ -193,7 +328,6 @@ export class LLMClient {
       const response = await this.openai.responses.create(requestBody);
       const parsed = this.extractResponseContent(response);
 
-      // Extract token usage if available
       const tokenUsage: TokenUsage | undefined = response.usage
         ? {
             inputTokens: response.usage.input_tokens || 0,
@@ -251,7 +385,7 @@ export class LLMClient {
   }
 
   /**
-   * Simple chat without tool calling (useful for analysis tasks) using Responses API
+   * Simple chat without tool calling (useful for analysis tasks)
    */
   async simpleChat(
     systemPrompt: string,
@@ -264,8 +398,29 @@ export class LLMClient {
     } = {}
   ): Promise<string> {
     const model = options.model ?? this.defaultAnalysisModel;
-    const reasoningEffort = options.reasoningEffort ?? 'none'; // Fast for analysis tasks
-    const verbosity = options.verbosity ?? 'low'; // Concise for analysis
+    const timer = startTimer('llm-client', 'simple-chat', 'info');
+
+    if (this.useChatCompletions) {
+      try {
+        const response = await this.openai.chat.completions.create({
+          model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userContent },
+          ],
+          max_tokens: options.maxTokens,
+        });
+        const content = response.choices?.[0]?.message?.content ?? '';
+        timer.end({ meta: { model, status: 'success' } });
+        return content;
+      } catch (error) {
+        timer.end({ meta: { model, status: 'error', error: (error as Error).message } });
+        throw new Error(`LLM request failed: ${(error as Error).message}`);
+      }
+    }
+
+    const reasoningEffort = options.reasoningEffort ?? 'none';
+    const verbosity = options.verbosity ?? 'low';
 
     const requestBody: ResponseCreateParamsNonStreaming = {
       model,
@@ -278,12 +433,10 @@ export class LLMClient {
       ...(options.maxTokens && { max_output_tokens: options.maxTokens }),
     };
 
-    const timer = startTimer('llm-client', 'simple-chat', 'info');
-
     try {
       debugLog('operation', 'LLM request (simple chat)', {
         model,
-        messageCount: 2, // system + user
+        messageCount: 2,
         toolCount: 0,
       });
 
@@ -382,20 +535,29 @@ User: "What are the email rules?"
 Assistant: ["email style guide formatting preferences", "email communication template structure"]`;
 
     try {
-      const response = await this.openai.responses.create({
-        model: this.defaultAnalysisModel,
-        input: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: query },
-        ],
-        reasoning: { effort: 'none' }, // Fast response for query expansion
-        text: {
-          verbosity: 'low', // Concise variations
-          format: { type: 'json_object' },
-        },
-      });
-
-      const content = response.output_text || '{"variations": []}';
+      let content: string;
+      if (this.useChatCompletions) {
+        const response = await this.openai.chat.completions.create({
+          model: this.defaultAnalysisModel,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: query },
+          ],
+          response_format: { type: 'json_object' },
+        });
+        content = response.choices?.[0]?.message?.content ?? '{"variations": []}';
+      } else {
+        const response = await this.openai.responses.create({
+          model: this.defaultAnalysisModel,
+          input: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: query },
+          ],
+          reasoning: { effort: 'none' },
+          text: { verbosity: 'low', format: { type: 'json_object' } },
+        });
+        content = response.output_text || '{"variations": []}';
+      }
       const parsed = JSON.parse(content);
 
       // Handle both array and object responses

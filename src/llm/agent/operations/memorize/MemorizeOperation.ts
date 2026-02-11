@@ -615,8 +615,58 @@ export class MemorizeOperation {
 
       const responseText = await this.toolRuntime.runToolLoop(systemPrompt, userMessage, context);
 
-      // Parse the JSON response with enhanced error handling
-      const result = safeJsonParse<MemorizeLLMResponse>(responseText, 'LLM response');
+      // Fallback: when agent filtered explicit storage request with no files, store directly.
+      // Catches: "Remember: X", "Memorize: X", "User wants me to remember X", Claude-forwarded requests.
+      const rawInput = (args.input ?? '').trim();
+      const kwMatch = rawInput.match(
+        /(?:^|\.\s*)(запомни|remember|memorize|store|save)\s*[:\s]+(.+)/is
+      );
+      const isExplicitRemember =
+        /^(запомни|remember|memorize|store|save)\s*[:\s]/i.test(rawInput) ||
+        /\b(запомни|remember|memorize|store|save)\s*[:\s]/i.test(rawInput);
+      if (
+        context.storedMemoryIds.length === 0 &&
+        !requestedFiles.length &&
+        rawInput &&
+        rawInput.length < 600 &&
+        isExplicitRemember
+      ) {
+        const coreText = (
+          kwMatch
+            ? kwMatch[2]
+            : rawInput.replace(/^(запомни|remember|memorize|store|save)\s*[:\s]*/i, '')
+        ).trim();
+        // Skip when content is only meta ("user said to remember" with no actual fact)
+        const isOnlyMeta =
+          /^(that\s+)?(the\s+)?user\s+(said|wants?|asked)(\s+me)?(\s+to)?\s+(remember|memorize|store)\s*$/i.test(
+            coreText
+          );
+        if (coreText.length > 3 && !isOnlyMeta) {
+          try {
+            const fallbackIds = await this.repo.upsertMemories(
+              index,
+              [{ text: coreText, metadata: { ...defaultMetadata, memoryType: 'episodic' } }],
+              defaultMetadata
+            );
+            context.storedMemoryIds.push(...fallbackIds);
+          } catch (e) {
+            console.warn('Memorize fallback upsert failed', e);
+          }
+        }
+      }
+
+      // Parse the JSON response with enhanced error handling.
+      // Local models may return prose; try to extract JSON or use empty result.
+      let result: MemorizeLLMResponse;
+      try {
+        result = safeJsonParse<MemorizeLLMResponse>(responseText, 'LLM response');
+      } catch (parseErr) {
+        console.warn(
+          'Memorize: could not parse LLM response as JSON, using empty result',
+          parseErr
+        );
+        result = {};
+      }
       const storedCount = context.storedMemoryIds.length;
 
       // Build decision from LLM response or heuristics

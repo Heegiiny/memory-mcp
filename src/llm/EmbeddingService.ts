@@ -19,12 +19,20 @@ export class EmbeddingService {
   private supportsDimensions: boolean;
 
   /**
-   * @param apiKey OpenAI API key
+   * @param apiKey OpenAI API key (use 'ollama' or any string for local/Ollama)
    * @param model Embedding model to use (default: 'text-embedding-3-small')
    * @param expectedDimensions Expected dimensions for validation (default: 1536)
+   * @param baseURL Optional base URL for local/OpenAI-compatible API (e.g. http://localhost:11434/v1 for Ollama)
    */
-  constructor(apiKey: string, model = 'text-embedding-3-small', expectedDimensions = 1536) {
-    this.openai = new OpenAI({ apiKey });
+  constructor(
+    apiKey: string,
+    model = 'text-embedding-3-small',
+    expectedDimensions = 1536,
+    baseURL?: string
+  ) {
+    const config: { apiKey: string; baseURL?: string } = { apiKey };
+    if (baseURL) config.baseURL = baseURL;
+    this.openai = new OpenAI(config);
     this.model = model;
     this.expectedDimensions = expectedDimensions;
     this.supportsDimensions = MODELS_SUPPORTING_DIMENSIONS.has(model);
